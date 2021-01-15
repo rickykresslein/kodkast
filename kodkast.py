@@ -1,3 +1,9 @@
+'''
+Title: Kodkast
+Author: Ricky Kresslein
+Version: 0.4
+'''
+
 import feedparser
 import sys
 import time
@@ -12,6 +18,8 @@ from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtGui as qtg
 from PyQt5 import QtCore as qtc
 
+# Class gratefully provided by MegasXLR on Python-forum.io
+# https://python-forum.io/Thread-PyQt-QSlider-jump-to-mouse-click-position
 class QJumpSlider(qtw.QSlider):
     def __init__(self, parent = None):
         super(QJumpSlider, self).__init__(parent)
@@ -35,6 +43,82 @@ class QClickLabel(qtw.QLabel):
         qtw.QLabel.mousePressEvent(self, event)
 
 
+# Class gratefully provided by eyllanesc on Stack Overflow and modified by me
+# https://stackoverflow.com/questions/46505130/creating-a-marquee-effect-in-pyside
+class QMarqueeLabel(qtw.QLabel):
+    def __init__(self, parent=None):
+        qtw.QLabel.__init__(self, parent)
+        self.px = 0
+        self.py = 15
+        self._direction = qtc.Qt.LeftToRight
+        self.setWordWrap(True)
+        self.timer = qtc.QTimer(self)
+        self.timer.timeout.connect(self.update)
+        self.timer.start(30)
+        self._speed = 2
+        self.textLength = 0
+        self.fontPointSize = 0
+        self.setAlignment(qtc.Qt.AlignVCenter)
+        self.setFixedHeight(self.fontMetrics().height())
+
+    def setFont(self, font):
+        qtw.QLabel.setFont(self, font)
+        self.setFixedHeight(self.fontMetrics().height())
+
+    def updateCoordinates(self):
+        align = self.alignment()
+        if align == qtc.Qt.AlignTop:
+            self.py = 10
+        elif align == qtc.Qt.AlignBottom:
+            self.py = self.height() - 10
+        elif align == qtc.Qt.AlignVCenter:
+            self.py = self.height() / 2
+        self.fontPointSize = self.font().pointSize() / 2
+        self.textLength = self.fontMetrics().width(self.text())
+
+    def setAlignment(self, alignment):
+        self.updateCoordinates()
+        qtw.QLabel.setAlignment(self, alignment)
+
+    def resizeEvent(self, event):
+        self.updateCoordinates()
+        qtw.QLabel.resizeEvent(self, event)
+
+    def paintEvent(self, event):
+        painter = qtg.QPainter(self)
+        if self._direction == qtc.Qt.RightToLeft:
+            self.px -= self.speed()
+            if self.px <= -self.textLength:
+                self.px = self.width()
+        else:
+            self.px += self.speed()
+            if self.px >= self.width():
+                self.px = -self.textLength
+        painter.drawText(self.px, round(self.py + self.fontPointSize), self.text())
+        painter.translate(self.px, 0)
+
+    def speed(self):
+        return self._speed
+
+    def setSpeed(self, speed):
+        self._speed = speed
+
+    def setDirection(self, direction):
+        self._direction = direction
+        if self._direction == qtc.Qt.RightToLeft:
+            # self.px = self.width() - self.textLength
+            self.px = 300
+        else:
+            self.px = 0
+        self.update()
+
+    def pause(self):
+        self.timer.stop()
+
+    def unpause(self):
+        self.timer.start()
+
+
 class MainWindow(qtw.QMainWindow):
 
     def __init__(self):
@@ -44,6 +128,7 @@ class MainWindow(qtw.QMainWindow):
         self.setWindowTitle('Kodkast')
         self.setFixedHeight(600)
         self.resize(350, 600)
+        self.start_width_resize = self.width() - 5
 
         self.track = None
         self.player = None
@@ -77,9 +162,10 @@ class MainWindow(qtw.QMainWindow):
         file_menu = menubar.addMenu("File")
         file_menu.addAction('Quit', qtw.QApplication.quit, qtg.QKeySequence.Quit)
 
-        # podcasts_menu = menubar.addMenu("Podcasts")
-        # add_podcast_action = podcasts_menu.addAction('Add a new podcast', self.add_podcast)
-        # add_podcast_action.setShortcut('Ctrl+A')
+        podcasts_menu = menubar.addMenu("Podcasts")
+        self.add_podcast_action = podcasts_menu.addAction('Add a new podcast', self.add_podcast)
+        self.add_podcast_action.setShortcut('Ctrl+A')
+        self.remove_podcast_action = podcasts_menu.addAction('Remove podcast', lambda: self.remove_podcast(self.lib_podcasts.currentItem().text()))
 
         episodes_menu = menubar.addMenu("Episodes")
         self.refresh_episodes_action = episodes_menu.addAction('Refresh episode list', self.load_episodes_from_feed)
@@ -87,6 +173,7 @@ class MainWindow(qtw.QMainWindow):
         self.refresh_episodes_action.setEnabled(False)
 
     def build_library_view(self):
+        self.refresh_episodes_action.setEnabled(False)
         library_layout = qtw.QWidget()
         library_layout.setLayout(qtw.QVBoxLayout())
 
@@ -101,6 +188,8 @@ class MainWindow(qtw.QMainWindow):
         library_layout.layout().addWidget(self.lib_add)
         library_layout.layout().addWidget(self.spinner)
         self.setCentralWidget(library_layout)
+        self.add_podcast_action.setEnabled(True)
+        self.remove_podcast_action.setEnabled(True)
 
         self.refresh_podcast_list()
     
@@ -133,8 +222,19 @@ class MainWindow(qtw.QMainWindow):
                 self.refresh_podcast_list()
         self.toggle_loading()
 
+    def remove_podcast(self, current_podcast):
+        current_podcast = PodcastDB.select().where(PodcastDB.title==current_podcast).get()
+        current_podcast.delete_instance()
+        query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
+        if query.exists():
+            for episode in query:
+                episode.delete_instance()
+        self.refresh_podcast_list()
+
     def build_episode_view(self, current_podcast):
         self.current_podcast = PodcastDB.select().where(PodcastDB.title==current_podcast).get()
+        self.add_podcast_action.setEnabled(False)
+        self.remove_podcast_action.setEnabled(False)
         episode_layout = qtw.QWidget()
         episode_layout.setLayout(qtw.QVBoxLayout())
 
@@ -195,6 +295,8 @@ class MainWindow(qtw.QMainWindow):
             self.ep_list.addItem(episode.title)
 
     def build_play_view(self, current_episode):
+        self.add_podcast_action.setEnabled(False)
+        self.remove_podcast_action.setEnabled(False)
         self.refresh_episodes_action.setEnabled(False)
         self.current_episode = EpisodeDB.select().where(EpisodeDB.title == current_episode).get()
         play_layout = qtw.QWidget()
@@ -207,19 +309,36 @@ class MainWindow(qtw.QMainWindow):
         request=urllib.request.Request(self.current_episode.image, None, headers)
         response = urllib.request.urlopen(request)
         url_image = response.read()
-        # url_image = urllib.request.urlopen(self.current_episode.image).read()
         ep_image = qtg.QPixmap()
         ep_image.loadFromData(url_image)
-        # scaled_width = play_layout.frameGeometry().width()
         ep_image_display.setPixmap(ep_image)
         ep_image_display.setScaledContents(True)
         ep_image_display.setFixedSize(300, 300)
-        # ep_image_display.move(100, 100)
-        # ep_image_display.setAlignment(qtc.Qt.AlignCenter)
+        ep_image_display.move(0, 200)
+        ep_image_display.setAlignment(qtc.Qt.AlignCenter)
+
+        # Podcast title scroll or not
         podcast_title = qtw.QLabel()
-        podcast_title.setFixedWidth(300)
+        podcast_title.setText(self.current_podcast.title)
+        text_width = podcast_title.fontMetrics().boundingRect(podcast_title.text()).width()
+        if text_width > self.start_width_resize:
+            podcast_title = QMarqueeLabel()
+            podcast_title.setDirection(qtc.Qt.RightToLeft)
+        podcast_title.setFixedWidth(self.start_width_resize)
+        podcast_title.move(0, 100)
+        podcast_title.setAlignment(qtc.Qt.AlignCenter)
+
+        # Episode title scroll or not
         episode_title = qtw.QLabel()
-        episode_title.setFixedWidth(300)
+        episode_title.setText(self.current_episode.title)
+        text_width = episode_title.fontMetrics().boundingRect(episode_title.text()).width()
+        if text_width > self.start_width_resize:
+            episode_title = QMarqueeLabel()
+            episode_title.setDirection(qtc.Qt.RightToLeft)
+        episode_title.setFixedWidth(self.start_width_resize)
+        episode_title.move(0, 100)
+        episode_title.setAlignment(qtc.Qt.AlignCenter)
+
         self.position_elapsed_time = qtw.QLabel("00:00")
         self.position_slider = QJumpSlider(qtc.Qt.Horizontal)
         self.position_slider.setMaximum(1000)
@@ -248,9 +367,9 @@ class MainWindow(qtw.QMainWindow):
         position_layout.layout().addWidget(self.position_total_time)
 
         play_layout.layout().addWidget(back_to_ep_list)
-        play_layout.layout().addWidget(ep_image_display)
-        play_layout.layout().addWidget(podcast_title)
-        play_layout.layout().addWidget(episode_title)
+        play_layout.layout().addWidget(ep_image_display, alignment=qtc.Qt.AlignCenter)
+        play_layout.layout().addWidget(podcast_title, alignment=qtc.Qt.AlignCenter)
+        play_layout.layout().addWidget(episode_title, alignment=qtc.Qt.AlignCenter)
         play_layout.layout().addWidget(position_layout)
         play_layout.layout().addWidget(controls_layout)
         play_layout.layout().addWidget(self.playback_speed_btn)
@@ -268,6 +387,8 @@ class MainWindow(qtw.QMainWindow):
         else:
             if self.player and self.player.is_playing():
                 self.timer.start()
+                podcast_title.setText(self.current_podcast.title)
+                episode_title.setText(self.current_episode.title)
                 self.ep_play.setText("⏸︎")
 
     def play_episode(self):
