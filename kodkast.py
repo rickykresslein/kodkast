@@ -1,7 +1,8 @@
 '''
 Title: Kodkast
 Author: Ricky Kresslein
-Version: 0.4
+Author URL: https://kressle.in
+Version: 0.4.5
 '''
 
 import feedparser
@@ -172,6 +173,9 @@ class MainWindow(qtw.QMainWindow):
         self.refresh_episodes_action.setShortcut('Ctrl+R')
         self.refresh_episodes_action.setEnabled(False)
 
+        self.play_shortcut = qtw.QShortcut(qtg.QKeySequence("Space"), self)
+        self.play_shortcut.activated.connect(self.play_episode_shortcut)
+
     def build_library_view(self):
         self.refresh_episodes_action.setEnabled(False)
         library_layout = qtw.QWidget()
@@ -298,6 +302,7 @@ class MainWindow(qtw.QMainWindow):
         self.add_podcast_action.setEnabled(False)
         self.remove_podcast_action.setEnabled(False)
         self.refresh_episodes_action.setEnabled(False)
+        self.play_view = True
         self.current_episode = EpisodeDB.select().where(EpisodeDB.title == current_episode).get()
         play_layout = qtw.QWidget()
         play_layout.setLayout(qtw.QVBoxLayout())
@@ -344,7 +349,8 @@ class MainWindow(qtw.QMainWindow):
         self.position_slider.setMaximum(1000)
         self.position_total_time = QClickLabel()
         self.position_total_time.clicked.connect(self.position_total_time_clicked)
-        self.ep_play = qtw.QPushButton("►", clicked=lambda: self.play_episode())
+        self.ep_play = qtw.QPushButton("►", clicked=self.play_episode)
+        self.ep_play.setFixedHeight(45)
         ep_skip_back = qtw.QPushButton("⟲", clicked=self.skip_back)
         ep_skip_fwd = qtw.QPushButton("⟳", clicked=self.skip_forward)
         self.playback_speed_btn = qtw.QPushButton(f"{self.playback_speed_val}x", clicked=self.set_playback_speed)
@@ -413,8 +419,13 @@ class MainWindow(qtw.QMainWindow):
             self.is_paused = True
             self.timer.stop()
 
+    def play_episode_shortcut(self):
+        if self.play_view:
+            self.play_episode()
+
     def back_to_episode_list(self):
         self.timer.stop()
+        self.play_view = False
         self.build_episode_view(self.current_podcast.title)
 
     def get_total_track_time(self):
