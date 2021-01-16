@@ -2,7 +2,7 @@
 Title: Kodkast
 Author: Ricky Kresslein
 Author URL: https://kressle.in
-Version: 0.4.5
+Version: 0.4.7
 '''
 
 import feedparser
@@ -182,12 +182,20 @@ class MainWindow(qtw.QMainWindow):
         library_layout.setLayout(qtw.QVBoxLayout())
 
         lib_title = qtw.QLabel('Library')
+        self.to_play_view_btn = qtw.QPushButton('➡', clicked=self.to_play_view)
+        self.to_play_view_btn.setFixedWidth(50)
         self.lib_podcasts = qtw.QListWidget()
         self.lib_podcasts.doubleClicked.connect(lambda: self.build_episode_view(self.lib_podcasts.currentItem().text()))
         self.lib_add = qtw.QPushButton('Add Podcast', clicked=self.add_podcast)
         self.spinner = WaitingSpinner(self)
 
-        library_layout.layout().addWidget(lib_title)
+        title_line = qtw.QWidget()
+        title_line.setLayout(qtw.QHBoxLayout())
+        title_line.layout().addWidget(lib_title, alignment=qtc.Qt.AlignLeft)
+        if self.player and self.player.is_playing():
+            title_line.layout().addWidget(self.to_play_view_btn, alignment=qtc.Qt.AlignRight)
+        
+        library_layout.layout().addWidget(title_line)
         library_layout.layout().addWidget(self.lib_podcasts)
         library_layout.layout().addWidget(self.lib_add)
         library_layout.layout().addWidget(self.spinner)
@@ -244,13 +252,21 @@ class MainWindow(qtw.QMainWindow):
 
         back_to_pod_list = qtw.QPushButton("⬅", clicked=self.build_library_view)
         back_to_pod_list.setFixedWidth(50)
+        self.to_play_view_btn = qtw.QPushButton('➡', clicked=self.to_play_view)
+        self.to_play_view_btn.setFixedWidth(50)
+        bak_fwd_layout = qtw.QWidget()
+        bak_fwd_layout.setLayout(qtw.QHBoxLayout())
+        bak_fwd_layout.layout().addWidget(back_to_pod_list, alignment=qtc.Qt.AlignLeft)
+        if self.player and self.player.is_playing():
+            bak_fwd_layout.layout().addWidget(self.to_play_view_btn, alignment=qtc.Qt.AlignRight)
+
         title_label = qtw.QLabel(self.current_podcast.title)
         self.ep_list = qtw.QListWidget()
         self.ep_list.doubleClicked.connect(lambda: self.build_play_view(self.ep_list.currentItem().text()))
         self.ep_list_play = qtw.QPushButton("Play", clicked=lambda: self.build_play_view(self.ep_list.currentItem().text()))
         self.spinner = WaitingSpinner(self)
 
-        episode_layout.layout().addWidget(back_to_pod_list)
+        episode_layout.layout().addWidget(bak_fwd_layout)
         episode_layout.layout().addWidget(title_label)
         episode_layout.layout().addWidget(self.ep_list)
         episode_layout.layout().addWidget(self.ep_list_play)
@@ -395,7 +411,9 @@ class MainWindow(qtw.QMainWindow):
                 self.timer.start()
                 podcast_title.setText(self.current_podcast.title)
                 episode_title.setText(self.current_episode.title)
+                self.get_total_track_time()
                 self.ep_play.setText("⏸︎")
+
 
     def play_episode(self):
         if not self.player.is_playing():
@@ -411,6 +429,7 @@ class MainWindow(qtw.QMainWindow):
                 if self.current_episode.bookmark != 0:
                     self.player.set_time(self.current_episode.bookmark)
                 self.get_total_track_time()
+
             self.player.set_rate(self.playback_speed_val)
             self.timer.start()
         else:
@@ -436,7 +455,10 @@ class MainWindow(qtw.QMainWindow):
         '''
         self.total_track_length = self.player.get_length() / 1000
         length_gmtime = time.gmtime(self.total_track_length)
-        self.ttl_string = time.strftime("%-H:%M:%S", length_gmtime)
+        if self.total_track_length >= 3600:
+            self.ttl_string = time.strftime("%-H:%M:%S", length_gmtime)
+        else:
+            self.ttl_string = time.strftime("%M:%S", length_gmtime)
         self.position_total_time.setText(self.ttl_string)
 
     def position_total_time_clicked(self):
@@ -472,6 +494,9 @@ class MainWindow(qtw.QMainWindow):
                 self.playback_speed_val = 1
             self.player.set_rate(self.playback_speed_val)
             self.playback_speed_btn.setText(f"{self.playback_speed_val}x")
+
+    def to_play_view(self):
+        self.build_play_view(self.current_episode.title)
 
     def update_ui(self):
         '''
@@ -514,6 +539,16 @@ class MainWindow(qtw.QMainWindow):
             # If player not playing and it's not paused the track is finished
             if not self.is_paused:
                 self.ep_play.setText("►")
+                self.player.set_position(0)
+                if self.total_track_length >= 3600:
+                    tte_string = '0:00:00'
+                else:
+                    tte_string = '00:00'
+                self.position_elapsed_time.setText(tte_string)
+                self.player.stop()
+                self.current_episode.bookmark = 0
+                self.position_slider.setValue(0)
+                self.current_episode.save()
 
     def toggle_loading(self):
         if self.spinner.isSpinning:
@@ -532,5 +567,7 @@ class MainWindow(qtw.QMainWindow):
 
 if __name__ == '__main__':
     app = qtw.QApplication(sys.argv)
+    # ctx = ApplicationContext()
     mw = MainWindow()
+    # sys.exit(ctx.app.exec_())
     sys.exit(app.exec())
