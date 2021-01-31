@@ -2,7 +2,7 @@
 Title: Kodkast
 Author: Ricky Kresslein
 Author URL: https://kressle.in
-Version: 0.4.7
+Version: 0.5
 '''
 
 import feedparser
@@ -10,11 +10,13 @@ import sys
 import time
 import vlc
 import urllib.request
+import urllib3
 import os
 import peewee
 import base64
 from pyqtspinner.spinner import WaitingSpinner
 from models import PodcastDB, EpisodeDB
+from PIL import Image, ImageQt
 from datetime import datetime
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtGui as qtg
@@ -192,6 +194,12 @@ class MainWindow(qtw.QMainWindow):
         self.to_play_view_btn = qtw.QPushButton('➡', clicked=self.to_play_view)
         self.to_play_view_btn.setFixedWidth(50)
         self.lib_podcasts = qtw.QListWidget()
+        self.lib_podcasts.setViewMode(qtw.QListView.IconMode)
+        self.lib_podcasts.setIconSize(qtc.QSize(130,130))
+        self.lib_podcasts.setMovement(False)
+        self.lib_podcasts.setResizeMode(qtw.QListView.Adjust)
+        self.lib_podcasts.setSpacing(11)
+        self.lib_podcasts.setUniformItemSizes(True)
         self.lib_podcasts.doubleClicked.connect(lambda: self.build_episode_view(self.lib_podcasts.currentItem().text()))
         self.lib_add = qtw.QPushButton('Add Podcast', clicked=self.add_podcast)
         self.spinner = WaitingSpinner(self)
@@ -216,7 +224,17 @@ class MainWindow(qtw.QMainWindow):
         query = PodcastDB.select()
         self.lib_podcasts.clear()
         for podcast in query:
-            self.lib_podcasts.addItem(podcast.title)
+            headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
+            request=urllib.request.Request(podcast.image, None, headers)
+            response = urllib.request.urlopen(request)
+            url_image = response.read()
+            podcast_pmap = qtg.QPixmap()
+            podcast_pmap.loadFromData(url_image)
+            podcast_icon = qtg.QIcon(podcast_pmap)
+            this_podcast = qtw.QListWidgetItem(podcast.title, self.lib_podcasts)
+            this_podcast.setStatusTip(podcast.title)
+            this_podcast.setIcon(podcast_icon)
+            this_podcast.setSizeHint(qtc.QSize(140, 150))
 
     def add_podcast(self):
         self.toggle_loading()
