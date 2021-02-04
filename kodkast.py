@@ -2,7 +2,7 @@
 Title: Kodkast
 Author: Ricky Kresslein
 Author URL: https://kressle.in
-Version: 0.5
+Version: 0.6
 '''
 
 import feedparser
@@ -81,7 +81,7 @@ class QMarqueeLabel(qtw.QLabel):
         elif align == qtc.Qt.AlignVCenter:
             self.py = self.height() / 2
         self.fontPointSize = self.font().pointSize() / 2
-        self.textLength = self.fontMetrics().width(self.text())
+        self.textLength = self.fontMetrics().horizontalAdvance(self.text())
 
     def setAlignment(self, alignment):
         self.updateCoordinates()
@@ -135,7 +135,6 @@ class MainWindow(qtw.QMainWindow):
         self.setWindowTitle('Kodkast')
         icon = self.icon_from_base64(image_base64)
         self.setWindowIcon(icon)
-        self.setFixedHeight(600)
         self.resize(350, 600)
         self.start_width_resize = self.width() - 5
 
@@ -195,12 +194,12 @@ class MainWindow(qtw.QMainWindow):
         try:
             PodcastDB.create_table()
         except peewee.OperationalError:
-            print("PodcastDB already exists!")
+            pass
         
         try:
             EpisodeDB.create_table()
         except peewee.OperationalError:
-            print("EpisodeDB already exists!")
+            pass
 
     def build_menu_bar(self):
         menubar = self.menuBar()
@@ -322,9 +321,18 @@ class MainWindow(qtw.QMainWindow):
             bak_fwd_layout.layout().addWidget(self.to_play_view_btn, alignment=qtc.Qt.AlignRight)
 
         title_label = qtw.QLabel(self.current_podcast.title)
-        self.ep_list = qtw.QListWidget()
-        self.ep_list.doubleClicked.connect(lambda: self.build_play_view(self.ep_list.currentItem().text()))
-        self.ep_list_play = qtw.QPushButton("Play", clicked=lambda: self.build_play_view(self.ep_list.currentItem().text()))
+        self.ep_list = qtw.QTableWidget()
+        self.ep_list.setColumnCount(2)
+        self.ep_list.setHorizontalHeaderLabels(['Date', 'Title'])
+        self.ep_list.horizontalHeaderItem(0).setTextAlignment(qtc.Qt.AlignLeft)
+        self.ep_list.horizontalHeaderItem(1).setTextAlignment(qtc.Qt.AlignLeft)
+        self.ep_list.setSelectionBehavior(qtw.QAbstractItemView.SelectRows)
+        self.ep_list.verticalHeader().setVisible(False)
+        self.ep_list.setSelectionMode(qtw.QAbstractItemView.SingleSelection)
+        self.ep_list.setAutoScroll(False)
+        self.ep_list.setShowGrid(False)
+        self.ep_list.doubleClicked.connect(lambda: self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text()))
+        self.ep_list_play = qtw.QPushButton("Play", clicked=lambda: self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text()))
         self.spinner = WaitingSpinner(self)
 
         episode_layout.layout().addWidget(bak_fwd_layout)
@@ -346,9 +354,10 @@ class MainWindow(qtw.QMainWindow):
     def load_episodes_from_feed(self):
         for episode in feedparser.parse(self.current_podcast.url).entries:
             published_date = datetime.fromtimestamp(time.mktime(episode.published_parsed))
+            published_date = published_date.strftime("%m-%d-%Y")
             query = EpisodeDB.select().where(EpisodeDB.url == self.get_episode_url(episode))
             if not query.exists():
-                if hasattr(episode, "itunes_duration"):
+                if hasattr(episode, "itunes_duration") and hasattr(episode, "image"):
                     EpisodeDB.create(
                         podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
                         title=episode.title,
@@ -358,7 +367,7 @@ class MainWindow(qtw.QMainWindow):
                         duration=episode.itunes_duration,
                         bookmark=0,
                     )
-                else:
+                elif hasattr(episode, "image"):
                     EpisodeDB.create(
                         podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
                         title=episode.title,
@@ -367,13 +376,40 @@ class MainWindow(qtw.QMainWindow):
                         image=episode.image['href'],
                         bookmark=0,
                     )
+                elif hasattr(episode, "itunes_duration"):
+                    EpisodeDB.create(
+                        podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
+                        title=episode.title,
+                        pub_date=published_date,
+                        url=self.get_episode_url(episode),
+                        image=self.current_podcast.image,
+                        duration=episode.itunes_duration,
+                        bookmark=0,
+                    )
+                else:
+                    EpisodeDB.create(
+                        podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
+                        title=episode.title,
+                        pub_date=published_date,
+                        url=self.get_episode_url(episode),
+                        image=self.current_podcast.image,
+                        bookmark=0,
+                    )
             self.refresh_episode_list()
 
     def refresh_episode_list(self):
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
-        self.ep_list.clear()
+        self.ep_list.setRowCount(0)
         for episode in query:
-            self.ep_list.addItem(episode.title)
+            row_data = [episode.pub_date, episode.title]
+            row = self.ep_list.rowCount()
+            self.ep_list.setRowCount(row+1)
+            col = 0
+            for item in row_data:
+                cell = qtw.QTableWidgetItem(item)
+                self.ep_list.setItem(row, col, cell)
+                col += 1
+        self.ep_list.resizeColumnsToContents()
 
     def build_play_view(self, current_episode):
         self.add_podcast_action.setEnabled(False)
@@ -580,9 +616,9 @@ class MainWindow(qtw.QMainWindow):
             time_remaining = self.total_track_length - track_time_elapsed
             tr_gmtime = time.gmtime(time_remaining)
             if self.total_track_length >= 3600:
-                tte_string = time.strftime("%-H:%M:%S", tr_gmtime)
+                tte_string = time.strftime("-%-H:%M:%S", tr_gmtime)
             else:
-                tte_string = time.strftime("%M:%S", tr_gmtime)
+                tte_string = time.strftime("-%M:%S", tr_gmtime)
             self.position_total_time.setText(tte_string)
 
         # Every 5 seconds, update database to save place in podcast
@@ -634,8 +670,7 @@ class MainWindow(qtw.QMainWindow):
         return icon
 
 if __name__ == '__main__':
+    qtw.QApplication.setAttribute(qtc.Qt.AA_EnableHighDpiScaling, True)
     app = qtw.QApplication(sys.argv)
-    # ctx = ApplicationContext()
     mw = MainWindow()
-    # sys.exit(ctx.app.exec_())
     sys.exit(app.exec())
