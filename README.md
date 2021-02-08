@@ -7,10 +7,10 @@ Kodkast is simple and lightweight, but contains all the tools you may require or
 ## Getting Started
 You can download the binaries for Linux, Windows, and Mac on my website, [https://kressle.in/projects/kodkast](https://kressle.in/projects/kodkast), or you can download the source here to compile it yourself.
 
-## Use
-The program does not contain a podcast browser yet, so to add a podcast you will need to copy and paste the link to the podcast's RSS feed (usually found on the podcast's website). Kodkast will take it from there.
+You must install [VLC](https://www.videolan.org/vlc/) for Kodkast to work.
 
-Kodkast parses all the data from the podcast link you provide and adds the podcast to your subscriptions list. Double-click the podcast to view the episodes. When playing an episode, Kodkast will remember your place, even if you close the app, so there is no need to search for where you were next time you go to listen.
+## Use
+Just click "Add Podcast" and add a podcast by searching the built-in iTunes database or input a feed URL. Double-click the podcast to view the episodes. When playing an episode, Kodkast will remember your place, even if you close the app, so there is no need to search for where you were next time you go to listen. Podcasts are played within Kodkast--no need to open an external media player.
 
 ## Project Details
 
