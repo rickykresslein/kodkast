@@ -28,7 +28,6 @@ class EpisodeDB(peewee.Model):
     pub_date = peewee.CharField()
     url = peewee.CharField()
     image = peewee.CharField()
-    duration = peewee.CharField()
     bookmark = peewee.IntegerField()
 
     class Meta:
