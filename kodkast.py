@@ -3,7 +3,7 @@ Title: Kodkast
 Author: Ricky Kresslein
 Author URL: https://kressle.in
 Project URL: https://kressle.in/projects/kodkast/
-Version: 0.7
+Version: 0.7.1
 '''
 
 import feedparser
@@ -17,6 +17,7 @@ import peewee
 import base64
 import itunes
 import requests
+import certifi
 import validators
 from models import PodcastDB, EpisodeDB
 from PIL import Image, ImageQt
@@ -138,8 +139,8 @@ class MainWindow(qtw.QMainWindow):
         self.setWindowTitle('Kodkast')
         icon = self.icon_from_base64(image_base64)
         self.setWindowIcon(icon)
-        self.resize(350, 600)
-        self.setFixedWidth(350)
+        self.resize(355, 600)
+        self.setFixedWidth(355)
         self.start_width_resize = self.width() - 5
 
         self.track = None
@@ -414,7 +415,7 @@ class MainWindow(qtw.QMainWindow):
         self.currently_top_100 = True
         self.results_list.clear()
         self.results_lod = []
-        results = requests.get('https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json').json()
+        results = requests.get('https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json', verify=certifi.where()).json()
         results = results['feed']['results']
         for result in results:
             # Only show results that have the necessary keys
