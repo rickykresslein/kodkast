@@ -3,7 +3,7 @@ Title: Kodkast
 Author: Ricky Kresslein
 Author URL: https://kressle.in
 Project URL: https://kressle.in/projects/kodkast/
-Version: 0.7.1
+Version: 0.7.5
 '''
 
 import feedparser
@@ -264,12 +264,17 @@ class MainWindow(qtw.QMainWindow):
         query = PodcastDB.select()
         self.lib_podcasts.clear()
         for podcast in query:
-            headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-            request=urllib.request.Request(podcast.image, None, headers)
-            response = urllib.request.urlopen(request)
-            url_image = response.read()
+            if not podcast.rendered:
+                headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
+                request=urllib.request.Request(podcast.image, None, headers)
+                response = urllib.request.urlopen(request)
+                url_image = response.read()
+                b64_img = base64.b64encode(url_image)
+                podcast.rendered = b64_img
+                podcast.save()
             podcast_pmap = qtg.QPixmap()
-            podcast_pmap.loadFromData(url_image)
+            # podcast_pmap.loadFromData(url_image)
+            podcast_pmap.loadFromData(base64.b64decode(podcast.rendered))
             podcast_icon = qtg.QIcon(podcast_pmap)
             this_podcast = qtw.QListWidgetItem(podcast.title, self.lib_podcasts)
             this_podcast.setStatusTip(podcast.title)
@@ -286,14 +291,18 @@ class MainWindow(qtw.QMainWindow):
         add_podcast_layout = qtw.QWidget()
         add_podcast_layout.setLayout(qtw.QVBoxLayout())
 
+        back_to_pod_list = qtw.QPushButton("⬅", clicked=self.build_library_view)
+        back_to_pod_list.setFixedWidth(50)
         search_itunes_title = qtw.QLabel('Search iTunes:')
         search_box = qtw.QLineEdit()
         search_button = qtw.QPushButton('Search', clicked=lambda: self.search_itunes(search_box.text()))
         search_button.setFixedWidth(100)
+        search_box.returnPressed.connect(search_button.click)
         add_by_url_title = qtw.QLabel('Add by URL:')
         url_box = qtw.QLineEdit()
         add_by_url_button = qtw.QPushButton('Add', clicked=lambda: self.add_podcast_to_library(url_box.text(),url_add=True))
-        search_button.setFixedWidth(100)
+        add_by_url_button.setFixedWidth(100)
+        url_box.returnPressed.connect(add_by_url_button.click)
         top_100_button = qtw.QPushButton('iTunes Top 100', clicked=self.show_top_100)
         self.results_list = qtw.QListWidget()
         self.results_list.setViewMode(qtw.QListView.IconMode)
@@ -319,6 +328,7 @@ class MainWindow(qtw.QMainWindow):
         url_line_layout.layout().addWidget(url_box)
         url_line_layout.layout().addWidget(add_by_url_button)
         
+        add_podcast_layout.layout().addWidget(back_to_pod_list)
         add_podcast_layout.layout().addWidget(add_by_url_title)
         add_podcast_layout.layout().addWidget(url_line_layout)
         add_podcast_layout.layout().addWidget(search_itunes_title)
@@ -327,6 +337,8 @@ class MainWindow(qtw.QMainWindow):
         add_podcast_layout.layout().addWidget(self.results_list)
         add_podcast_layout.layout().addWidget(subscribe_button)
         self.setCentralWidget(add_podcast_layout)
+        
+        search_box.setFocus()
 
         qtw.QApplication.restoreOverrideCursor()
         
@@ -335,27 +347,32 @@ class MainWindow(qtw.QMainWindow):
         self.currently_top_100 = False
         self.results_list.clear()
         self.results_lod = []
+        result_limit = 0
         results = itunes.search(query=search_query, media='podcast')
         for result in results:
-            # Only show results that have the necessary keys
-            if result.json.keys() >= {"artworkUrl600", "feedUrl"}:
-                # Get title, picture, and url for each podcast that has them
-                result_dict = {'title': result.name, 'image': result.json['artworkUrl600'], 'url': result.json['feedUrl']}
-                # Store all this data in a variable (list of dicts) in order to recal the feed url
-                self.results_lod.append(result_dict)
-                
-                # Display title and picture
-                headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-                request=urllib.request.Request(result_dict['image'], None, headers)
-                response = urllib.request.urlopen(request)
-                url_image = response.read()
-                podcast_pmap = qtg.QPixmap()
-                podcast_pmap.loadFromData(url_image)
-                podcast_icon = qtg.QIcon(podcast_pmap)
-                this_podcast = qtw.QListWidgetItem(result_dict['title'], self.results_list)
-                this_podcast.setStatusTip(result_dict['title'])
-                this_podcast.setIcon(podcast_icon)
-                this_podcast.setSizeHint(qtc.QSize(140, 150))
+            if result_limit < 50:
+                # Only show results that have the necessary keys
+                if result.json.keys() >= {"artworkUrl600", "feedUrl"}:
+                    # Get title, picture, and url for each podcast that has them
+                    result_dict = {'title': result.name, 'image': result.json['artworkUrl600'], 'url': result.json['feedUrl']}
+                    # Store all this data in a variable (list of dicts) in order to recal the feed url
+                    self.results_lod.append(result_dict)
+                    
+                    # Display title and picture
+                    headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
+                    request=urllib.request.Request(result_dict['image'], None, headers)
+                    response = urllib.request.urlopen(request)
+                    url_image = response.read()
+                    podcast_pmap = qtg.QPixmap()
+                    podcast_pmap.loadFromData(url_image)
+                    podcast_icon = qtg.QIcon(podcast_pmap)
+                    this_podcast = qtw.QListWidgetItem(result_dict['title'], self.results_list)
+                    this_podcast.setStatusTip(result_dict['title'])
+                    this_podcast.setIcon(podcast_icon)
+                    this_podcast.setSizeHint(qtc.QSize(140, 150))
+                    result_limit += 1
+            else:
+                break
         qtw.QApplication.restoreOverrideCursor()
         
     def add_podcast_to_library(self, ap_selection, url_add=False):
@@ -381,19 +398,15 @@ class MainWindow(qtw.QMainWindow):
                 qtw.QApplication.restoreOverrideCursor()
                 self.invalid_url_warning()
             else:
-                if hasattr(feed, "image"):
-                    query = PodcastDB.select().where(PodcastDB.title == feed.title)
-                    if query.exists():
-                        exists_msg = qtw.QMessageBox()
-                        exists_msg.setIcon(qtw.QMessageBox.Information)
-                        exists_msg.setWindowTitle("Already Exists")
-                        exists_msg.setText("You are already subscribed to that podcast.")
-                        exists_msg.exec_()
-                    else:
-                        PodcastDB.create(title=feed.title, url=ap_url, image=feed.image['href'])
+                query = PodcastDB.select().where(PodcastDB.title == feed.title)
+                if query.exists():
+                    exists_msg = qtw.QMessageBox()
+                    exists_msg.setIcon(qtw.QMessageBox.Information)
+                    exists_msg.setWindowTitle("Already Exists")
+                    exists_msg.setText("You are already subscribed to that podcast.")
+                    exists_msg.exec_()
                 else:
-                    # TODO add a default image if podcast doesn't have one
-                    pass
+                    PodcastDB.create(title=feed.title, url=ap_url, image=feed.image['href'])
                 self.build_library_view()
                 qtw.QApplication.restoreOverrideCursor()
         else:
@@ -562,6 +575,7 @@ class MainWindow(qtw.QMainWindow):
         qtw.QApplication.restoreOverrideCursor()
 
     def build_play_view(self, current_episode):
+        self.just_built_play_view = True
         self.add_podcast_action.setEnabled(False)
         self.remove_podcast_action.setEnabled(False)
         self.refresh_episodes_action.setEnabled(False)
@@ -586,26 +600,26 @@ class MainWindow(qtw.QMainWindow):
         ep_image_display.setAlignment(qtc.Qt.AlignCenter)
 
         # Podcast title scroll or not
-        podcast_title = qtw.QLabel()
-        podcast_title.setText(self.current_podcast.title)
-        text_width = podcast_title.fontMetrics().boundingRect(podcast_title.text()).width()
+        self.podcast_title = qtw.QLabel()
+        self.podcast_title.setText(self.current_podcast.title)
+        text_width = self.podcast_title.fontMetrics().boundingRect(self.podcast_title.text()).width()
         if text_width > self.start_width_resize:
-            podcast_title = QMarqueeLabel()
-            podcast_title.setDirection(qtc.Qt.RightToLeft)
-        podcast_title.setFixedWidth(self.start_width_resize)
-        podcast_title.move(0, 100)
-        podcast_title.setAlignment(qtc.Qt.AlignCenter)
+            self.podcast_title = QMarqueeLabel()
+            self.podcast_title.setDirection(qtc.Qt.RightToLeft)
+        self.podcast_title.setFixedWidth(self.start_width_resize)
+        self.podcast_title.move(0, 100)
+        self.podcast_title.setAlignment(qtc.Qt.AlignCenter)
 
         # Episode title scroll or not
-        episode_title = qtw.QLabel()
-        episode_title.setText(self.current_episode.title)
-        text_width = episode_title.fontMetrics().boundingRect(episode_title.text()).width()
+        self.episode_title = qtw.QLabel()
+        self.episode_title.setText(self.current_episode.title)
+        text_width = self.episode_title.fontMetrics().boundingRect(self.episode_title.text()).width()
         if text_width > self.start_width_resize:
-            episode_title = QMarqueeLabel()
-            episode_title.setDirection(qtc.Qt.RightToLeft)
-        episode_title.setFixedWidth(self.start_width_resize)
-        episode_title.move(0, 100)
-        episode_title.setAlignment(qtc.Qt.AlignCenter)
+            self.episode_title = QMarqueeLabel()
+            self.episode_title.setDirection(qtc.Qt.RightToLeft)
+        self.episode_title.setFixedWidth(self.start_width_resize)
+        self.episode_title.move(0, 100)
+        self.episode_title.setAlignment(qtc.Qt.AlignCenter)
 
         self.position_elapsed_time = qtw.QLabel("00:00")
         self.position_slider = QJumpSlider(qtc.Qt.Horizontal)
@@ -637,8 +651,8 @@ class MainWindow(qtw.QMainWindow):
 
         play_layout.layout().addWidget(back_to_ep_list)
         play_layout.layout().addWidget(ep_image_display, alignment=qtc.Qt.AlignCenter)
-        play_layout.layout().addWidget(podcast_title, alignment=qtc.Qt.AlignCenter)
-        play_layout.layout().addWidget(episode_title, alignment=qtc.Qt.AlignCenter)
+        play_layout.layout().addWidget(self.podcast_title, alignment=qtc.Qt.AlignCenter)
+        play_layout.layout().addWidget(self.episode_title, alignment=qtc.Qt.AlignCenter)
         play_layout.layout().addWidget(position_layout)
         play_layout.layout().addWidget(controls_layout)
         play_layout.layout().addWidget(self.playback_speed_btn)
@@ -649,8 +663,8 @@ class MainWindow(qtw.QMainWindow):
             if self.player and self.player.is_playing():
                 self.player.stop()
             self.player = vlc.MediaPlayer(self.track)
-            podcast_title.setText(self.current_podcast.title)
-            episode_title.setText(self.current_episode.title)
+            self.podcast_title.setText(self.current_podcast.title)
+            self.episode_title.setText(self.current_episode.title)
             self.is_paused = False
             self.play_episode()
             if self.current_episode.bookmark != 0:
@@ -658,8 +672,8 @@ class MainWindow(qtw.QMainWindow):
         else:
             if self.player and self.player.is_playing():
                 self.timer.start()
-                podcast_title.setText(self.current_podcast.title)
-                episode_title.setText(self.current_episode.title)
+                self.podcast_title.setText(self.current_podcast.title)
+                self.episode_title.setText(self.current_episode.title)
                 self.get_total_track_time()
                 self.ep_play.setText("Ⅱ")
             elif self.player and not self.player.is_playing():
@@ -695,7 +709,6 @@ class MainWindow(qtw.QMainWindow):
             self.play_episode()
 
     def back_to_episode_list(self):
-        self.timer.stop()
         self.play_view = False
         self.build_episode_view(self.current_podcast.title)
 
@@ -709,8 +722,11 @@ class MainWindow(qtw.QMainWindow):
         length_gmtime = time.gmtime(self.total_track_length)
         if self.total_track_length >= 3600:
             self.ttl_string = time.strftime("%-H:%M:%S", length_gmtime)
+            pixels_wide = self.fontMetrics().horizontalAdvance("-0:00:00")
         else:
             self.ttl_string = time.strftime("%M:%S", length_gmtime)
+            pixels_wide = self.fontMetrics().horizontalAdvance("-00:00")
+        self.position_total_time.setFixedWidth(pixels_wide)
         self.position_total_time.setText(self.ttl_string)
 
     def position_total_time_clicked(self):
@@ -758,51 +774,83 @@ class MainWindow(qtw.QMainWindow):
         tte_gmtime = time.gmtime(self.track_time_elapsed)
         if self.total_track_length >= 3600:
             tte_string = time.strftime("%-H:%M:%S", tte_gmtime)
+            if self.just_built_play_view:
+                pixels_wide = self.fontMetrics().horizontalAdvance("0:00:00")
         else:
             tte_string = time.strftime("%M:%S", tte_gmtime)
+            if self.just_built_play_view:
+                pixels_wide = self.fontMetrics().horizontalAdvance("00:00")
+        if self.just_built_play_view:
+            self.position_elapsed_time.setFixedWidth(pixels_wide)
+            self.just_built_play_view = False
         self.position_elapsed_time.setText(tte_string)
 
     def update_ui(self):
         '''
         Update the slider and other UI elements while the audio is playing.
         '''
-        self.show_track_time_elapsed()
+        if self.play_view:
+            self.show_track_time_elapsed()
 
-        # If the user chose to display the remaining track time
-        if self.ptt_to_prt:
-            time_remaining = self.total_track_length - self.track_time_elapsed
-            tr_gmtime = time.gmtime(time_remaining)
-            if self.total_track_length >= 3600:
-                tte_string = time.strftime("-%-H:%M:%S", tr_gmtime)
-            else:
-                tte_string = time.strftime("-%M:%S", tr_gmtime)
-            self.position_total_time.setText(tte_string)
+            # If the user chose to display the remaining track time
+            if self.ptt_to_prt:
+                time_remaining = (self.total_track_length - self.track_time_elapsed) / self.playback_speed_val
+                tr_gmtime = time.gmtime(int(time_remaining))
+                if self.total_track_length >= 3600:
+                    tte_string = time.strftime("-%-H:%M:%S", tr_gmtime)
+                else:
+                    tte_string = time.strftime("-%M:%S", tr_gmtime)
+                self.position_total_time.setText(tte_string)
 
-        # Every 5 seconds, update database to save place in podcast
-        rounded_elapsed = int(round(self.track_time_elapsed, 0))
-        if rounded_elapsed % 5 == 0:
-            # Don't save the same timestamp twice
-            if 'already_saved' not in locals() or already_saved != rounded_elapsed:
-                self.current_episode.bookmark = self.player.get_time()
-                self.current_episode.save()
-                already_saved = rounded_elapsed
+            # Every 5 seconds, update database to save place in podcast
+            rounded_elapsed = int(round(self.track_time_elapsed, 0))
+            if rounded_elapsed % 5 == 0:
+                # Don't save the same timestamp twice
+                if 'already_saved' not in locals() or already_saved != rounded_elapsed:
+                    self.current_episode.bookmark = self.player.get_time()
+                    self.current_episode.save()
+                    already_saved = rounded_elapsed
 
         # If no media is playing, stop the timer
         if not self.player.is_playing():
-            self.timer.stop()
             # If player not playing and it's not paused the track is finished
             if not self.is_paused:
-                self.ep_play.setText("►")
+                if self.play_view:
+                    self.ep_play.setText("►")
+                    if self.total_track_length >= 3600:
+                        tte_string = '0:00:00'
+                    else:
+                        tte_string = '00:00'
+                    self.position_elapsed_time.setText(tte_string)
+                    self.position_slider.setValue(0)
+                
                 self.player.set_position(0)
-                if self.total_track_length >= 3600:
-                    tte_string = '0:00:00'
-                else:
-                    tte_string = '00:00'
-                self.position_elapsed_time.setText(tte_string)
                 self.player.stop()
                 self.current_episode.bookmark = 0
-                self.position_slider.setValue(0)
                 self.current_episode.save()
+                self.try_next_episode()
+    
+    def try_next_episode(self):
+        # Check if there is a newer episode
+        if self.current_episode.id != 1:
+            # Get the next episode
+            next_episode_id = self.current_episode.id - 1
+            self.current_episode = EpisodeDB.select().where(EpisodeDB.id == next_episode_id).get()
+            self.track = self.current_episode.url
+            self.player = vlc.MediaPlayer(self.track)
+            # If we are in play view, update all labels.
+            if self.play_view:
+                self.podcast_title.setText(self.current_podcast.title)
+                self.episode_title.setText(self.current_episode.title)
+                self.play_episode()
+            else:
+                self.player.play()
+                while not self.player.is_playing():
+                    time.sleep(0.5)
+                if self.current_episode.bookmark != 0:
+                    self.player.set_time(self.current_episode.bookmark)
+        else:
+            self.timer.stop()
     
     @staticmethod
     def get_episode_url(episode):
