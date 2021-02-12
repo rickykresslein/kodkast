@@ -15,6 +15,7 @@ class PodcastDB(peewee.Model):
     title = peewee.CharField()
     url = peewee.CharField()
     image = peewee.CharField()
+    rendered = peewee.CharField(default="")
 
     class Meta:
         database = database
