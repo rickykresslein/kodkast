@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 0.7.5
+# Version: 0.8
 
 import feedparser
 import sys
@@ -18,7 +18,7 @@ import requests
 import certifi
 import validators
 from models import PodcastDB, EpisodeDB
-from PIL import Image, ImageQt
+# from PIL import Image, ImageQt
 from datetime import date, datetime, timedelta
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtGui as qtg
@@ -138,7 +138,7 @@ class MainWindow(qtw.QMainWindow):
         self.setWindowTitle('Kodkast')
         icon = self.icon_from_base64(image_base64)
         self.setWindowIcon(icon)
-        self.resize(355, 600)
+        self.resize(355, 700)
         self.setFixedWidth(355)
         self.start_width_resize = self.width() - 5
 
@@ -149,6 +149,9 @@ class MainWindow(qtw.QMainWindow):
         self.playback_speed_val = 1
         self.podcasts_old = []
         self.currently_top_100 = False
+        self.timer = qtc.QTimer(self)
+        self.timer.setInterval(500)
+        self.timer.timeout.connect(self.update_ui)
         
         self.set_vlc_dir()
 
@@ -230,8 +233,9 @@ class MainWindow(qtw.QMainWindow):
 
     def build_library_view(self):
         self.refresh_episodes_action.setEnabled(False)
-        library_layout = qtw.QWidget()
-        library_layout.setLayout(qtw.QVBoxLayout())
+        self.library_layout = qtw.QWidget()
+        self.library_layout.setLayout(qtw.QVBoxLayout())
+        self.resize(355, 700)
 
         lib_title = qtw.QLabel('Library')
         self.to_play_view_btn = qtw.QPushButton('➡', clicked=self.to_play_view)
@@ -251,11 +255,12 @@ class MainWindow(qtw.QMainWindow):
         title_line.layout().addWidget(lib_title, alignment=qtc.Qt.AlignLeft)
         if self.player and self.player.is_playing():
             title_line.layout().addWidget(self.to_play_view_btn, alignment=qtc.Qt.AlignRight)
-        
-        library_layout.layout().addWidget(title_line)
-        library_layout.layout().addWidget(self.lib_podcasts)
-        library_layout.layout().addWidget(self.lib_add)
-        self.setCentralWidget(library_layout)
+        self.library_layout.layout().addWidget(title_line)
+        self.library_layout.layout().addWidget(self.lib_podcasts)
+        self.library_layout.layout().addWidget(self.lib_add)
+        # Show mini player if podcast is already playing
+        self.build_mini_player(self.library_layout)
+        self.setCentralWidget(self.library_layout)
         self.add_podcast_action.setEnabled(True)
         self.remove_podcast_action.setEnabled(True)
 
@@ -289,8 +294,8 @@ class MainWindow(qtw.QMainWindow):
         self.add_podcast_action.setEnabled(False)
         self.remove_podcast_action.setEnabled(False)
         
-        add_podcast_layout = qtw.QWidget()
-        add_podcast_layout.setLayout(qtw.QVBoxLayout())
+        self.add_podcast_layout = qtw.QWidget()
+        self.add_podcast_layout.setLayout(qtw.QVBoxLayout())
 
         back_to_pod_list = qtw.QPushButton("⬅", clicked=self.build_library_view)
         back_to_pod_list.setFixedWidth(50)
@@ -329,15 +334,17 @@ class MainWindow(qtw.QMainWindow):
         url_line_layout.layout().addWidget(url_box)
         url_line_layout.layout().addWidget(add_by_url_button)
         
-        add_podcast_layout.layout().addWidget(back_to_pod_list)
-        add_podcast_layout.layout().addWidget(add_by_url_title)
-        add_podcast_layout.layout().addWidget(url_line_layout)
-        add_podcast_layout.layout().addWidget(search_itunes_title)
-        add_podcast_layout.layout().addWidget(search_line_layout)
-        add_podcast_layout.layout().addWidget(top_100_button)
-        add_podcast_layout.layout().addWidget(self.results_list)
-        add_podcast_layout.layout().addWidget(subscribe_button)
-        self.setCentralWidget(add_podcast_layout)
+        self.add_podcast_layout.layout().addWidget(back_to_pod_list)
+        self.add_podcast_layout.layout().addWidget(add_by_url_title)
+        self.add_podcast_layout.layout().addWidget(url_line_layout)
+        self.add_podcast_layout.layout().addWidget(search_itunes_title)
+        self.add_podcast_layout.layout().addWidget(search_line_layout)
+        self.add_podcast_layout.layout().addWidget(top_100_button)
+        self.add_podcast_layout.layout().addWidget(self.results_list)
+        self.add_podcast_layout.layout().addWidget(subscribe_button)
+        # Show mini player if podcast is already playing
+        self.build_mini_player(self.add_podcast_layout)
+        self.setCentralWidget(self.add_podcast_layout)
         
         search_box.setFocus()
 
@@ -470,6 +477,7 @@ class MainWindow(qtw.QMainWindow):
         self.remove_podcast_action.setEnabled(False)
         episode_layout = qtw.QWidget()
         episode_layout.setLayout(qtw.QVBoxLayout())
+        self.resize(355, 700)
 
         back_to_pod_list = qtw.QPushButton("⬅", clicked=self.build_library_view)
         back_to_pod_list.setFixedWidth(50)
@@ -499,6 +507,7 @@ class MainWindow(qtw.QMainWindow):
         episode_layout.layout().addWidget(title_label)
         episode_layout.layout().addWidget(self.ep_list)
         episode_layout.layout().addWidget(self.ep_list_play)
+        self.build_mini_player(episode_layout)
         self.setCentralWidget(episode_layout)
         
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
@@ -580,7 +589,6 @@ class MainWindow(qtw.QMainWindow):
         self.add_podcast_action.setEnabled(False)
         self.remove_podcast_action.setEnabled(False)
         self.refresh_episodes_action.setEnabled(False)
-        self.play_view = True
         self.current_episode = EpisodeDB.select().where(EpisodeDB.title == current_episode).get()
         play_layout = qtw.QWidget()
         play_layout.setLayout(qtw.QVBoxLayout())
@@ -614,8 +622,8 @@ class MainWindow(qtw.QMainWindow):
         # Episode title scroll or not
         self.episode_title = qtw.QLabel()
         self.episode_title.setText(self.current_episode.title)
-        text_width = self.episode_title.fontMetrics().boundingRect(self.episode_title.text()).width()
-        if text_width > self.start_width_resize:
+        self.ep_text_width = self.episode_title.fontMetrics().boundingRect(self.episode_title.text()).width()
+        if self.ep_text_width > self.start_width_resize:
             self.episode_title = QMarqueeLabel()
             self.episode_title.setDirection(qtc.Qt.RightToLeft)
         self.episode_title.setFixedWidth(self.start_width_resize)
@@ -633,10 +641,6 @@ class MainWindow(qtw.QMainWindow):
         ep_skip_fwd = qtw.QPushButton("⟳", clicked=self.skip_forward)
         self.playback_speed_btn = qtw.QPushButton(f"{self.playback_speed_val}x", clicked=self.set_playback_speed)
         self.playback_speed_btn.setFixedWidth(50)
-
-        self.timer = qtc.QTimer(self)
-        self.timer.setInterval(500)
-        self.timer.timeout.connect(self.update_ui)
 
         controls_layout = qtw.QWidget()
         controls_layout.setLayout(qtw.QHBoxLayout())
@@ -658,6 +662,9 @@ class MainWindow(qtw.QMainWindow):
         play_layout.layout().addWidget(controls_layout)
         play_layout.layout().addWidget(self.playback_speed_btn)
         self.setCentralWidget(play_layout)
+        self.resize(355, 600)
+        
+        self.play_view = True
 
         if self.track != self.current_episode.url:
             self.track = self.current_episode.url
@@ -681,16 +688,15 @@ class MainWindow(qtw.QMainWindow):
                 if self.current_episode.bookmark != 0:
                     self.show_track_time_elapsed()
 
-
     def play_episode(self):
         if not self.player.is_playing():
             if self.is_paused:
+                self.ep_play.setText("Ⅱ")
                 self.player.pause()
                 self.is_paused = False
-                self.ep_play.setText("Ⅱ")
             else:
-                self.player.play()
                 self.ep_play.setText("Ⅱ")
+                self.player.play()
                 while not self.player.is_playing():
                     time.sleep(0.5)
                 if self.current_episode.bookmark != 0:
@@ -706,12 +712,43 @@ class MainWindow(qtw.QMainWindow):
             self.timer.stop()
 
     def play_episode_shortcut(self):
-        if self.play_view:
-            self.play_episode()
+        if self.player and self.ep_play:
+            try:
+                self.play_episode()
+            except RuntimeError:
+                pass
 
     def back_to_episode_list(self):
         self.play_view = False
         self.build_episode_view(self.current_podcast.title)
+        
+    def build_mini_player(self, which_layout):
+        if self.player and self.player.is_playing():
+            mini_player = qtw.QWidget()
+            mini_player.setLayout(qtw.QHBoxLayout())
+            second_col = qtw.QWidget()
+            second_col.setLayout(qtw.QVBoxLayout())
+            
+            # Rebuild Track Title
+            self.episode_title = qtw.QLabel()
+            self.episode_title.setText(self.current_episode.title)
+            self.ep_text_width = self.episode_title.fontMetrics().horizontalAdvance(self.episode_title.text())
+            if self.ep_text_width > self.position_slider.frameGeometry().width():
+                self.episode_title = QMarqueeLabel()
+                self.episode_title.setDirection(qtc.Qt.RightToLeft)
+                self.episode_title.setText(self.current_episode.title)
+            self.episode_title.setAlignment(qtc.Qt.AlignCenter)
+            
+            second_col.layout().addWidget(self.episode_title)
+            second_col.layout().addWidget(self.position_slider)
+            
+            mini_player.layout().addWidget(self.ep_play)
+            mini_player.layout().addWidget(second_col)
+            
+            mini_player.setFixedHeight(75)
+            
+            # Add mini player to current widget
+            which_layout.layout().addWidget(mini_player)
 
     def get_total_track_time(self):
         '''
@@ -768,8 +805,6 @@ class MainWindow(qtw.QMainWindow):
         self.build_play_view(self.current_episode.title)
         
     def show_track_time_elapsed(self):
-        track_position = int(self.player.get_position() * 1000)
-        self.position_slider.setValue(track_position)
         # Show track time elapsed
         self.track_time_elapsed = self.player.get_time() / 1000
         tte_gmtime = time.gmtime(self.track_time_elapsed)
@@ -790,6 +825,9 @@ class MainWindow(qtw.QMainWindow):
         '''
         Update the slider and other UI elements while the audio is playing.
         '''
+        track_position = int(self.player.get_position() * 1000)
+        self.position_slider.setValue(track_position)
+        
         if self.play_view:
             self.show_track_time_elapsed()
 
