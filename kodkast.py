@@ -152,6 +152,7 @@ class MainWindow(qtw.QMainWindow):
         self.timer = qtc.QTimer(self)
         self.timer.setInterval(500)
         self.timer.timeout.connect(self.update_ui)
+        self.old_image = ""
         
         self.set_vlc_dir()
 
@@ -517,40 +518,45 @@ class MainWindow(qtw.QMainWindow):
         else:
             # Otherwise, build a new list from the feed.
             self.load_episodes_from_feed()
-        self.refresh_episodes_action.setEnabled(True)
+        self.refresh_episodes_action.setEnabled(True)        
 
     def load_episodes_from_feed(self):
         qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
         show_error = False
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
-        if query.exists():
-            for episode in query:
-                episode.delete_instance()
         for episode in feedparser.parse(self.current_podcast.url).entries:
-            published_date = datetime.fromtimestamp(time.mktime(episode.published_parsed))
-            published_date = published_date.strftime("%m-%d-%Y")
-            try:
-                if hasattr(episode, "image"):
-                    EpisodeDB.create(
-                        podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
-                        title=episode.title,
-                        pub_date=published_date,
-                        url=self.get_episode_url(episode),
-                        image=episode.image['href'],
-                        bookmark=0,
-                    )
-                else:
-                    EpisodeDB.create(
-                        podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
-                        title=episode.title,
-                        pub_date=published_date,
-                        url=self.get_episode_url(episode),
-                        image=self.current_podcast.image,
-                        bookmark=0,
-                    )
-                self.refresh_episode_list()
-            except peewee.IntegrityError:
-                show_error = True
+            is_new_episode = True
+            if query.exists():
+                for old_episode in query:
+                    if old_episode.title == episode.title and old_episode.url == self.get_episode_url(episode):
+                        is_new_episode = False
+                    elif old_episode.title == episode.title and old_episode.url != self.get_episode_url(episode):
+                        old_episode.delete_instance()
+            if is_new_episode:
+                published_date = datetime.fromtimestamp(time.mktime(episode.published_parsed))
+                published_date = published_date.strftime("%m-%d-%Y")
+                try:
+                    if hasattr(episode, "image"):
+                        EpisodeDB.create(
+                            podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
+                            title=episode.title,
+                            pub_date=published_date,
+                            url=self.get_episode_url(episode),
+                            image=episode.image['href'],
+                            bookmark=0,
+                        )
+                    else:
+                        EpisodeDB.create(
+                            podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
+                            title=episode.title,
+                            pub_date=published_date,
+                            url=self.get_episode_url(episode),
+                            image=self.current_podcast.image,
+                            bookmark=0,
+                        )
+                    self.refresh_episode_list()
+                except peewee.IntegrityError:
+                    show_error = True
             
         if show_error:
             show_error = False
@@ -567,7 +573,7 @@ class MainWindow(qtw.QMainWindow):
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
         self.ep_list.setRowCount(0)
         today = date.today()
-        yesterday = today - timedelta(days=1) 
+        yesterday = today - timedelta(days=1)
         for episode in query:
             row_data = [episode.pub_date, episode.title]
             row = self.ep_list.rowCount()
@@ -585,6 +591,7 @@ class MainWindow(qtw.QMainWindow):
         qtw.QApplication.restoreOverrideCursor()
 
     def build_play_view(self, current_episode):
+        qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
         self.just_built_play_view = True
         self.add_podcast_action.setEnabled(False)
         self.remove_podcast_action.setEnabled(False)
@@ -595,14 +602,20 @@ class MainWindow(qtw.QMainWindow):
 
         back_to_ep_list = qtw.QPushButton("⬅", clicked=self.back_to_episode_list)
         back_to_ep_list.setFixedWidth(50)
+        
         ep_image_display = qtw.QLabel()
-        headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-        request=urllib.request.Request(self.current_episode.image, None, headers)
-        response = urllib.request.urlopen(request)
-        url_image = response.read()
-        ep_image = qtg.QPixmap()
-        ep_image.loadFromData(url_image)
-        ep_image_display.setPixmap(ep_image)
+        
+        if self.old_image != self.current_episode.image:
+            self.old_image = self.current_episode.image
+            headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
+            request=urllib.request.Request(self.current_episode.image, None, headers)
+            response = urllib.request.urlopen(request)
+            url_image = response.read()
+            b64_img = base64.b64encode(url_image)
+            current_episode_rendered = b64_img
+            self.ep_image = qtg.QPixmap()
+            self.ep_image.loadFromData(base64.b64decode(current_episode_rendered))
+        ep_image_display.setPixmap(self.ep_image)
         ep_image_display.setScaledContents(True)
         ep_image_display.setFixedSize(300, 300)
         ep_image_display.move(0, 200)
@@ -687,6 +700,7 @@ class MainWindow(qtw.QMainWindow):
             elif self.player and not self.player.is_playing():
                 if self.current_episode.bookmark != 0:
                     self.show_track_time_elapsed()
+        qtw.QApplication.restoreOverrideCursor()
 
     def play_episode(self):
         if not self.player.is_playing():
