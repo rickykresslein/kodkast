@@ -153,6 +153,7 @@ class MainWindow(qtw.QMainWindow):
         self.timer.setInterval(500)
         self.timer.timeout.connect(self.update_ui)
         self.old_image = ""
+        self.already_saved = -1
         
         self.set_vlc_dir()
 
@@ -859,10 +860,10 @@ class MainWindow(qtw.QMainWindow):
             rounded_elapsed = int(round(self.track_time_elapsed, 0))
             if rounded_elapsed % 5 == 0:
                 # Don't save the same timestamp twice
-                if 'already_saved' not in locals() or already_saved != rounded_elapsed:
+                if self.already_saved != rounded_elapsed:
                     self.current_episode.bookmark = self.player.get_time()
                     self.current_episode.save()
-                    already_saved = rounded_elapsed
+                    self.already_saved = rounded_elapsed
 
         # If no media is playing, stop the timer
         if not self.player.is_playing():
