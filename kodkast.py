@@ -232,6 +232,8 @@ class MainWindow(qtw.QMainWindow):
 
         self.play_shortcut = qtw.QShortcut(qtg.QKeySequence("Space"), self)
         self.play_shortcut.activated.connect(self.play_episode_shortcut)
+        self.play_pause_key = qtw.QShortcut(qtg.QKeySequence(qtc.Qt.Key_MediaPlay), self)
+        self.play_pause_key.activated.connect(self.play_episode_shortcut)
 
     def build_library_view(self):
         self.refresh_episodes_action.setEnabled(False)
