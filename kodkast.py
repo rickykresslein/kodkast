@@ -521,6 +521,11 @@ class MainWindow(qtw.QMainWindow):
         if query.exists():
             # If podcast episode lists exists, load it.
             self.refresh_episode_list()
+            # If latest episode is older than 6 days, check for new episodes
+            newest_episode = datetime.strptime(self.ep_list.item(0,0).text(), "%m-%d-%Y")
+            time_since_newest = datetime.now() - newest_episode
+            if time_since_newest.days > 6:
+                self.load_episodes_from_feed()
         else:
             # Otherwise, build a new list from the feed.
             self.load_episodes_from_feed()
