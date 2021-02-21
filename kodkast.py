@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 0.8
+# Version: 0.8.6
 
 import feedparser
 import sys
@@ -142,6 +142,7 @@ class MainWindow(qtw.QMainWindow):
         self.setFixedWidth(355)
         self.start_width_resize = self.width() - 5
 
+        self.headers = {'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
         self.track = None
         self.player = None
         self.is_paused = False
@@ -252,6 +253,8 @@ class MainWindow(qtw.QMainWindow):
         self.lib_podcasts.setSpacing(11)
         self.lib_podcasts.setUniformItemSizes(True)
         self.lib_podcasts.doubleClicked.connect(lambda: self.build_episode_view(self.lib_podcasts.currentItem().text()))
+        self.lib_podcasts.setContextMenuPolicy(qtc.Qt.CustomContextMenu)
+        self.lib_podcasts.customContextMenuRequested.connect(self.library_context_menu)
         self.lib_add = qtw.QPushButton('Add Podcast', clicked=self.build_add_podcast)
 
         title_line = qtw.QWidget()
@@ -275,8 +278,7 @@ class MainWindow(qtw.QMainWindow):
         self.lib_podcasts.clear()
         for podcast in query:
             if not podcast.rendered:
-                headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-                request=urllib.request.Request(podcast.image, None, headers)
+                request=urllib.request.Request(podcast.image, None, self.headers)
                 response = urllib.request.urlopen(request)
                 url_image = response.read()
                 b64_img = base64.b64encode(url_image)
@@ -324,6 +326,8 @@ class MainWindow(qtw.QMainWindow):
         self.results_list.doubleClicked.connect(lambda: self.add_podcast_to_library(
                                                  self.results_lod[self.results_list.currentRow()]
                                                 ))
+        self.results_list.setContextMenuPolicy(qtc.Qt.CustomContextMenu)
+        self.results_list.customContextMenuRequested.connect(self.search_context_menu)
         subscribe_button = qtw.QPushButton('Subscribe', clicked=lambda: self.add_podcast_to_library(
                                                             self.results_lod[self.results_list.currentRow()]
                                                         ))
@@ -371,8 +375,7 @@ class MainWindow(qtw.QMainWindow):
                     self.results_lod.append(result_dict)
                     
                     # Display title and picture
-                    headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-                    request=urllib.request.Request(result_dict['image'], None, headers)
+                    request=urllib.request.Request(result_dict['image'], None, self.headers)
                     response = urllib.request.urlopen(request)
                     url_image = response.read()
                     podcast_pmap = qtg.QPixmap()
@@ -404,7 +407,6 @@ class MainWindow(qtw.QMainWindow):
             ap_url = ap_selection
 
         if validators.url(ap_url):
-            # time.sleep(1.5)
             feed = feedparser.parse(ap_url).feed
             if not hasattr(feed, "title"):
                 qtw.QApplication.restoreOverrideCursor()
@@ -451,8 +453,7 @@ class MainWindow(qtw.QMainWindow):
                 self.results_lod.append(result_dict)
                 
                 # Display title and picture
-                headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-                request=urllib.request.Request(result_dict['image'], None, headers)
+                request=urllib.request.Request(result_dict['image'], None, self.headers)
                 response = urllib.request.urlopen(request)
                 url_image = response.read()
                 podcast_pmap = qtg.QPixmap()
@@ -505,6 +506,8 @@ class MainWindow(qtw.QMainWindow):
         self.ep_list.setAutoScroll(False)
         self.ep_list.setShowGrid(False)
         self.ep_list.doubleClicked.connect(lambda: self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text()))
+        self.ep_list.setContextMenuPolicy(qtc.Qt.CustomContextMenu)
+        self.ep_list.customContextMenuRequested.connect(self.episode_context_menu)
         self.ep_list_play = qtw.QPushButton("Play", clicked=lambda: self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text()))
 
         episode_layout.layout().addWidget(bak_fwd_layout)
@@ -610,8 +613,7 @@ class MainWindow(qtw.QMainWindow):
         
         if self.old_image != self.current_episode.image:
             self.old_image = self.current_episode.image
-            headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',}
-            request=urllib.request.Request(self.current_episode.image, None, headers)
+            request=urllib.request.Request(self.current_episode.image, None, self.headers)
             response = urllib.request.urlopen(request)
             url_image = response.read()
             b64_img = base64.b64encode(url_image)
@@ -766,6 +768,95 @@ class MainWindow(qtw.QMainWindow):
             
             # Add mini player to current widget
             which_layout.layout().addWidget(mini_player)
+            
+    def build_about_view(self, ap_selection):
+        qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
+        self.add_podcast_action.setEnabled(False)
+        self.remove_podcast_action.setEnabled(False)
+        self.refresh_episodes_action.setEnabled(False)
+        about_layout = qtw.QWidget()
+        about_layout.setLayout(qtw.QVBoxLayout())
+
+        back_to_search = qtw.QPushButton("⬅", clicked=self.build_add_podcast)
+        back_to_search.setFixedWidth(50)
+        
+        podcast_image_display = qtw.QLabel()
+        
+        if self.currently_top_100:
+            ap = itunes.lookup(int(ap_selection['id']))
+            if ap.json.keys() >= {"feedUrl"}:
+                ap_url = ap.json['feedUrl']
+            else:
+                qtw.QApplication.restoreOverrideCursor()
+                self.invalid_url_warning()
+                return
+        else:
+            ap_url = ap_selection['url']
+            
+        feed = feedparser.parse(ap_url).feed
+        image = feed.image['href']
+
+        request=urllib.request.Request(image, None, self.headers)
+        response = urllib.request.urlopen(request)
+        url_image = response.read()
+        podcast_image = qtg.QPixmap()
+        podcast_image.loadFromData(url_image)
+        podcast_image_display.setPixmap(podcast_image)
+        podcast_image_display.setScaledContents(True)
+        podcast_image_display.setFixedSize(250, 250)
+        podcast_image_display.move(0, 200)
+        podcast_image_display.setAlignment(qtc.Qt.AlignCenter)
+        
+        podcast_title = qtw.QLabel(feed.title)
+        podcast_title.setStyleSheet('font-weight:bold')
+        text_width = podcast_title.fontMetrics().boundingRect(podcast_title.text()).width()
+        if text_width > self.start_width_resize:
+            podcast_title = QMarqueeLabel(feed.title)
+            podcast_title.setDirection(qtc.Qt.RightToLeft)
+        podcast_title.setFixedWidth(self.start_width_resize)
+        podcast_title.move(0, 100)
+        podcast_title.setAlignment(qtc.Qt.AlignCenter)
+        description_words = feed.description.split()
+        description = ""
+        if len(description_words) > 40:
+            for i in range(40):
+                description += description_words[i] + " "
+            description += "..."
+        else:
+            description = feed.description
+        podcast_description = qtw.QLabel(description)
+        podcast_description.setWordWrap(True)
+        artist_names = ""
+        if hasattr(feed, "authors"):
+            for artist in feed['authors']:
+                if hasattr(artist, "name"):
+                    if not artist_names:
+                        artist_names = "feat. " + artist.name
+                    else:
+                        artist_names += ", " + artist.name
+            artist_words = artist_names.split()
+            artist_names_final = ""
+            if len(artist_words) > 10:
+                for i in range(10):
+                    artist_names_final += artist_words[i] + " "
+                    if i == 9:
+                        artist_names_final += "..."
+            else:
+                artist_names_final = artist_names
+        artist_names_lbl = qtw.QLabel(artist_names)
+        artist_names_lbl.setWordWrap(True)
+        subscribe_btn = qtw.QPushButton("Subscribe", clicked=lambda: self.add_podcast_to_library(ap_selection))
+        subscribe_btn.setFixedWidth(300)
+        
+        about_layout.layout().addWidget(back_to_search)
+        about_layout.layout().addWidget(podcast_image_display, alignment=qtc.Qt.AlignCenter)
+        about_layout.layout().addWidget(subscribe_btn, alignment=qtc.Qt.AlignCenter)
+        about_layout.layout().addWidget(podcast_title, alignment=qtc.Qt.AlignCenter)
+        about_layout.layout().addWidget(podcast_description)
+        about_layout.layout().addWidget(artist_names_lbl)
+
+        self.setCentralWidget(about_layout)
+        qtw.QApplication.restoreOverrideCursor()
 
     def get_total_track_time(self):
         '''
@@ -912,6 +1003,28 @@ class MainWindow(qtw.QMainWindow):
                         self.player.set_time(self.current_episode.bookmark)
             else:
                 self.timer.stop()
+	
+    def library_context_menu(self, position):
+        if self.lib_podcasts.itemAt(position):
+            contextMenu = qtw.QMenu(self)
+            remove_action = contextMenu.addAction("Remove Podcast")
+            action = contextMenu.exec_(qtg.QCursor.pos())
+            if action == remove_action:
+                self.remove_podcast(self.lib_podcasts.itemAt(position).text())
+                
+    def episode_context_menu(self, position):
+        contextMenu = qtw.QMenu(self)
+        play_action = contextMenu.addAction("Play")
+        action = contextMenu.exec_(qtg.QCursor.pos())
+        if action == play_action:
+            self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text())
+            
+    def search_context_menu(self, position):
+        contextMenu = qtw.QMenu(self)
+        about_action = contextMenu.addAction("About")
+        action = contextMenu.exec_(qtg.QCursor.pos())
+        if action == about_action:
+            self.build_about_view(self.results_lod[self.results_list.currentRow()])
     
     @staticmethod
     def get_episode_url(episode):
