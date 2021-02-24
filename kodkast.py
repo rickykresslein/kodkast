@@ -4,7 +4,6 @@
 # Project URL: https://kressle.in/projects/kodkast/
 # Version: 0.8.6
 
-import feedparser
 import sys
 import time
 import vlc
@@ -17,6 +16,7 @@ import itunes
 import requests
 import certifi
 import validators
+from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
 # from PIL import Image, ImageQt
 from datetime import date, datetime, timedelta
@@ -407,22 +407,35 @@ class MainWindow(qtw.QMainWindow):
             ap_url = ap_selection
 
         if validators.url(ap_url):
-            feed = feedparser.parse(ap_url).feed
-            if not hasattr(feed, "title"):
-                qtw.QApplication.restoreOverrideCursor()
-                self.invalid_url_warning()
-            else:
-                query = PodcastDB.select().where(PodcastDB.title == feed.title)
+            feed_req = requests.get(ap_url)
+            try:
+                feed = BeautifulSoup(feed_req.content, features='xml')
+                feed_title = feed.find('title').text
+                if url_add:
+                    try:
+                        feed_image = feed.find('image')['href']
+                    except KeyError:
+                        feed_image = feed.find('image').find('url').text
+                else:
+                    try:
+                        feed_image = feed.find('image').find('url').text
+                    except:
+                        feed_image = feed.find('image')['href']
+                query = PodcastDB.select().where(PodcastDB.title == feed_title)
                 if query.exists():
+                    qtw.QApplication.restoreOverrideCursor()
                     exists_msg = qtw.QMessageBox()
                     exists_msg.setIcon(qtw.QMessageBox.Information)
                     exists_msg.setWindowTitle("Already Exists")
                     exists_msg.setText("You are already subscribed to that podcast.")
                     exists_msg.exec_()
                 else:
-                    PodcastDB.create(title=feed.title, url=ap_url, image=feed.image['href'])
+                    PodcastDB.create(title=feed_title, url=ap_url, image=feed_image)
+                    qtw.QApplication.restoreOverrideCursor()
                 self.build_library_view()
+            except AttributeError:
                 qtw.QApplication.restoreOverrideCursor()
+                self.invalid_url_warning()
         else:
             # VLC not installed warning dialog
             qtw.QApplication.restoreOverrideCursor()
@@ -535,33 +548,48 @@ class MainWindow(qtw.QMainWindow):
         qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
         show_error = False
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
-        for episode in feedparser.parse(self.current_podcast.url).entries:
+
+        feed_req = requests.get(self.current_podcast.url)
+        feed = BeautifulSoup(feed_req.content, features='xml')
+        items = feed.find_all('item')
+
+        for episode in items:
             is_new_episode = True
+            episode_title = episode.title.text
+            episode_url = episode.enclosure['url']
+            episode_raw_date = time = datetime.strptime(episode.pubDate.text, "%a, %d %b %Y %H:%M:%S %z")
+            try:
+                episode_image = feed.find('image').find('url').text
+            except:
+                try:
+                    episode_image = feed.find('image')['href']
+                except:
+                    episode_image = None
+            
             if query.exists():
                 for old_episode in query:
-                    if old_episode.title == episode.title and old_episode.url == self.get_episode_url(episode):
+                    if old_episode.title == episode_title and old_episode.url == episode_url:
                         is_new_episode = False
-                    elif old_episode.title == episode.title and old_episode.url != self.get_episode_url(episode):
+                    elif old_episode.title == episode_title and old_episode.url != episode_url:
                         old_episode.delete_instance()
             if is_new_episode:
-                published_date = datetime.fromtimestamp(time.mktime(episode.published_parsed))
-                published_date = published_date.strftime("%m-%d-%Y")
+                published_date = episode_raw_date.strftime("%m-%d-%Y")
                 try:
-                    if hasattr(episode, "image"):
+                    if episode_image:
                         EpisodeDB.create(
                             podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
-                            title=episode.title,
+                            title=episode_title,
                             pub_date=published_date,
-                            url=self.get_episode_url(episode),
-                            image=episode.image['href'],
+                            url=episode_url,
+                            image=episode_image,
                             bookmark=0,
                         )
                     else:
                         EpisodeDB.create(
                             podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
-                            title=episode.title,
+                            title=episode_title,
                             pub_date=published_date,
-                            url=self.get_episode_url(episode),
+                            url=episode_url,
                             image=self.current_podcast.image,
                             bookmark=0,
                         )
@@ -798,10 +826,19 @@ class MainWindow(qtw.QMainWindow):
         else:
             ap_url = ap_selection['url']
             
-        feed = feedparser.parse(ap_url).feed
-        image = feed.image['href']
 
-        request=urllib.request.Request(image, None, self.headers)
+        feed_req = requests.get(ap_url)
+        feed = BeautifulSoup(feed_req.content, features='xml')
+        feed_title = feed.find('title').text
+        try:
+            feed_image = feed.find('image').find('url').text
+        except:
+            feed_image = feed.find('image')['href']
+
+        feed_description = feed.find('description').text
+        feed_author = "by " + feed.find('author').text
+
+        request=urllib.request.Request(feed_image, None, self.headers)
         response = urllib.request.urlopen(request)
         url_image = response.read()
         podcast_image = qtg.QPixmap()
@@ -812,53 +849,39 @@ class MainWindow(qtw.QMainWindow):
         podcast_image_display.move(0, 200)
         podcast_image_display.setAlignment(qtc.Qt.AlignCenter)
         
-        podcast_title = qtw.QLabel(feed.title)
+        podcast_title = qtw.QLabel(feed_title)
         podcast_title.setStyleSheet('font-weight:bold')
         text_width = podcast_title.fontMetrics().boundingRect(podcast_title.text()).width()
         if text_width > self.start_width_resize:
-            podcast_title = QMarqueeLabel(feed.title)
+            podcast_title = QMarqueeLabel(feed_title)
             podcast_title.setDirection(qtc.Qt.RightToLeft)
         podcast_title.setFixedWidth(self.start_width_resize)
         podcast_title.move(0, 100)
         podcast_title.setAlignment(qtc.Qt.AlignCenter)
-        description_words = feed.description.split()
+        description_words = feed_description.split()
         description = ""
-        if len(description_words) > 40:
-            for i in range(40):
+        if len(description_words) > 90:
+            for i in range(90):
                 description += description_words[i] + " "
             description += "..."
         else:
-            description = feed.description
+            description = feed_description
         podcast_description = qtw.QLabel(description)
         podcast_description.setWordWrap(True)
-        artist_names = ""
-        if hasattr(feed, "authors"):
-            for artist in feed['authors']:
-                if hasattr(artist, "name"):
-                    if not artist_names:
-                        artist_names = "feat. " + artist.name
-                    else:
-                        artist_names += ", " + artist.name
-            artist_words = artist_names.split()
-            artist_names_final = ""
-            if len(artist_words) > 10:
-                for i in range(10):
-                    artist_names_final += artist_words[i] + " "
-                    if i == 9:
-                        artist_names_final += "..."
-            else:
-                artist_names_final = artist_names
-        artist_names_lbl = qtw.QLabel(artist_names)
+        artist_names_lbl = qtw.QLabel(feed_author)
         artist_names_lbl.setWordWrap(True)
+        artist_names_lbl.setStyleSheet('font-style:italic')
         subscribe_btn = qtw.QPushButton("Subscribe", clicked=lambda: self.add_podcast_to_library(ap_selection))
         subscribe_btn.setFixedWidth(300)
+        podcast_description.setFixedHeight(270)
+        podcast_description.setAlignment(qtc.Qt.AlignTop)
         
         about_layout.layout().addWidget(back_to_search)
         about_layout.layout().addWidget(podcast_image_display, alignment=qtc.Qt.AlignCenter)
         about_layout.layout().addWidget(subscribe_btn, alignment=qtc.Qt.AlignCenter)
         about_layout.layout().addWidget(podcast_title, alignment=qtc.Qt.AlignCenter)
-        about_layout.layout().addWidget(podcast_description)
         about_layout.layout().addWidget(artist_names_lbl)
+        about_layout.layout().addWidget(podcast_description)
 
         self.setCentralWidget(about_layout)
         qtw.QApplication.restoreOverrideCursor()
