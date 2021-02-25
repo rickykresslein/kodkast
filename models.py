@@ -26,7 +26,7 @@ class EpisodeDB(peewee.Model):
     """
     podcast = peewee.ForeignKeyField(PodcastDB)
     title = peewee.CharField()
-    pub_date = peewee.CharField()
+    pub_date = peewee.DateField()
     url = peewee.CharField()
     image = peewee.CharField()
     bookmark = peewee.IntegerField()

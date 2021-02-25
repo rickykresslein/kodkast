@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 0.8.6
+# Version: 0.8.9
 
 import sys
 import time
@@ -18,7 +18,6 @@ import certifi
 import validators
 from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
-# from PIL import Image, ImageQt
 from datetime import date, datetime, timedelta
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtGui as qtg
@@ -116,7 +115,6 @@ class QMarqueeLabel(qtw.QLabel):
     def setDirection(self, direction):
         self._direction = direction
         if self._direction == qtc.Qt.RightToLeft:
-            # self.px = self.width() - self.textLength
             self.px = 300
         else:
             self.px = 0
@@ -285,7 +283,6 @@ class MainWindow(qtw.QMainWindow):
                 podcast.rendered = b64_img
                 podcast.save()
             podcast_pmap = qtg.QPixmap()
-            # podcast_pmap.loadFromData(url_image)
             podcast_pmap.loadFromData(base64.b64decode(podcast.rendered))
             podcast_icon = qtg.QIcon(podcast_pmap)
             this_podcast = qtw.QListWidgetItem(podcast.title, self.lib_podcasts)
@@ -370,12 +367,12 @@ class MainWindow(qtw.QMainWindow):
                 # Only show results that have the necessary keys
                 if result.json.keys() >= {"artworkUrl600", "feedUrl"}:
                     # Get title, picture, and url for each podcast that has them
-                    result_dict = {'title': result.name, 'image': result.json['artworkUrl600'], 'url': result.json['feedUrl']}
+                    result_dict = {'title': result.name, 'image': result.artwork['600'], 'url': result.json['feedUrl']}
                     # Store all this data in a variable (list of dicts) in order to recal the feed url
                     self.results_lod.append(result_dict)
                     
                     # Display title and picture
-                    request=urllib.request.Request(result_dict['image'], None, self.headers)
+                    request = urllib.request.Request(result_dict['image'], None, self.headers)
                     response = urllib.request.urlopen(request)
                     url_image = response.read()
                     podcast_pmap = qtg.QPixmap()
@@ -535,10 +532,12 @@ class MainWindow(qtw.QMainWindow):
             # If podcast episode lists exists, load it.
             self.refresh_episode_list()
             # If latest episode is older than 6 days, check for new episodes
-            newest_episode = datetime.strptime(self.ep_list.item(0,0).text(), "%m-%d-%Y")
-            time_since_newest = datetime.now() - newest_episode
-            if time_since_newest.days > 6:
-                self.load_episodes_from_feed()
+            latest_text = self.ep_list.item(0,0).text()
+            if latest_text != "Today" and latest_text != "Yesterday":
+                newest_episode = datetime.strptime(latest_text, "%m-%d-%Y")
+                time_since_newest = datetime.now() - newest_episode
+                if time_since_newest.days > 6:
+                    self.load_episodes_from_feed()
         else:
             # Otherwise, build a new list from the feed.
             self.load_episodes_from_feed()
@@ -557,7 +556,7 @@ class MainWindow(qtw.QMainWindow):
             is_new_episode = True
             episode_title = episode.title.text
             episode_url = episode.enclosure['url']
-            episode_raw_date = time = datetime.strptime(episode.pubDate.text, "%a, %d %b %Y %H:%M:%S %z")
+            published_date = datetime.strptime(episode.pubDate.text, "%a, %d %b %Y %H:%M:%S %z")
             try:
                 episode_image = feed.find('image').find('url').text
             except:
@@ -573,13 +572,12 @@ class MainWindow(qtw.QMainWindow):
                     elif old_episode.title == episode_title and old_episode.url != episode_url:
                         old_episode.delete_instance()
             if is_new_episode:
-                published_date = episode_raw_date.strftime("%m-%d-%Y")
                 try:
                     if episode_image:
                         EpisodeDB.create(
                             podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
                             title=episode_title,
-                            pub_date=published_date,
+                            pub_date=published_date.date(),
                             url=episode_url,
                             image=episode_image,
                             bookmark=0,
@@ -588,7 +586,7 @@ class MainWindow(qtw.QMainWindow):
                         EpisodeDB.create(
                             podcast=PodcastDB.get(PodcastDB.title==self.current_podcast.title),
                             title=episode_title,
-                            pub_date=published_date,
+                            pub_date=published_date.date(),
                             url=episode_url,
                             image=self.current_podcast.image,
                             bookmark=0,
@@ -609,12 +607,12 @@ class MainWindow(qtw.QMainWindow):
 
     def refresh_episode_list(self):
         qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
-        query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
+        query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast).order_by(EpisodeDB.pub_date.desc())
         self.ep_list.setRowCount(0)
         today = date.today()
         yesterday = today - timedelta(days=1)
         for episode in query:
-            row_data = [episode.pub_date, episode.title]
+            row_data = [episode.pub_date.strftime("%m-%d-%Y"), episode.title]
             row = self.ep_list.rowCount()
             self.ep_list.setRowCount(row+1)
             col = 0
@@ -646,7 +644,7 @@ class MainWindow(qtw.QMainWindow):
         
         if self.old_image != self.current_episode.image:
             self.old_image = self.current_episode.image
-            request=urllib.request.Request(self.current_episode.image, None, self.headers)
+            request = urllib.request.Request(self.current_episode.image, None, self.headers)
             response = urllib.request.urlopen(request)
             url_image = response.read()
             b64_img = base64.b64encode(url_image)
@@ -1008,14 +1006,15 @@ class MainWindow(qtw.QMainWindow):
     def try_next_episode(self):
         # Check if there is a newer episode
         ep_date_list = []
-        query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
+        query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast).order_by(EpisodeDB.pub_date.desc())
         if query.exists():
             for episode in query:
-                ep_date_list.append(datetime.strptime(episode.pub_date, "%m-%d-%Y"))
-            if datetime.strptime(self.current_episode.pub_date, "%m-%d-%Y") != max(ep_date_list):
+                ep_date_list.append(episode.pub_date)
+            current_episode_id = ep_date_list.index(self.current_episode.pub_date)
+            if current_episode_id != 0:
                 # Get the next episode
-                next_episode_id = self.current_episode.id - 1
-                self.current_episode = EpisodeDB.select().where(EpisodeDB.id == next_episode_id).get()
+                next_episode_id = current_episode_id - 1
+                self.current_episode = EpisodeDB.select().where(EpisodeDB.pub_date == ep_date_list[next_episode_id]).get()
                 self.track = self.current_episode.url
                 self.player = vlc.MediaPlayer(self.track)
                 # If we are in play view, update all labels.
