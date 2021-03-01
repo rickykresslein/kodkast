@@ -153,6 +153,7 @@ class MainWindow(qtw.QMainWindow):
         self.timer.timeout.connect(self.update_ui)
         self.old_image = ""
         self.already_saved = -1
+        self.current_os = "linux"
         
         self.set_vlc_dir()
 
@@ -163,8 +164,7 @@ class MainWindow(qtw.QMainWindow):
 
         self.show()
 
-    @staticmethod
-    def set_vlc_dir():
+    def set_vlc_dir(self):
         """
         Set the directory of VLC Plugins for the OS and warn user
         if it is not installed.
@@ -191,15 +191,17 @@ class MainWindow(qtw.QMainWindow):
             elif os.path.isdir("/usr/lib32/vlc/plugins"):
                 os.environ["VLC_PLUGIN_PATH"] = "/usr/lib32/vlc/plugins"
             else:
-                # VLC is not installed
                 vlc_not_installed.exec_()
         elif sys.platform == "darwin":
-            # mac
+            # Mac
+            self.current_os = "mac"
             if os.path.isdir("/Applications/VLC.app/Contents/MacOS/plugins"):
                 os.environ["VLC_PLUGIN_PATH"] = "/Applications/VLC.app/Contents/MacOS/plugins"
             else:
                 # VLC not installed
                 vlc_not_installed.exec_()
+        elif sys.platform == "win32" or sys.platform == "cygwin":
+            self.current_os = "windows"
 
     @staticmethod
     def initiate_database():
@@ -363,7 +365,7 @@ class MainWindow(qtw.QMainWindow):
         result_limit = 0
         results = itunes.search(query=search_query, media='podcast')
         for result in results:
-            if result_limit < 50:
+            if result_limit < 25:
                 # Only show results that have the necessary keys
                 if result.json.keys() >= {"artworkUrl600", "feedUrl"}:
                     # Get title, picture, and url for each podcast that has them
@@ -893,8 +895,12 @@ class MainWindow(qtw.QMainWindow):
         self.total_track_length = self.player.get_length() / 1000
         length_gmtime = time.gmtime(self.total_track_length)
         if self.total_track_length >= 3600:
-            self.ttl_string = time.strftime("%-H:%M:%S", length_gmtime)
-            pixels_wide = self.fontMetrics().horizontalAdvance("-0:00:00")
+            if self.current_os == "windows":
+                self.ttl_string = time.strftime("%H:%M:%S", length_gmtime)
+                pixels_wide = self.fontMetrics().horizontalAdvance("-00:00:00")
+            else:
+                self.ttl_string = time.strftime("%-H:%M:%S", length_gmtime)
+                pixels_wide = self.fontMetrics().horizontalAdvance("-0:00:00")
         else:
             self.ttl_string = time.strftime("%M:%S", length_gmtime)
             pixels_wide = self.fontMetrics().horizontalAdvance("-00:00")
@@ -943,9 +949,14 @@ class MainWindow(qtw.QMainWindow):
         self.track_time_elapsed = self.player.get_time() / 1000
         tte_gmtime = time.gmtime(self.track_time_elapsed)
         if self.total_track_length >= 3600:
-            tte_string = time.strftime("%-H:%M:%S", tte_gmtime)
-            if self.just_built_play_view:
-                pixels_wide = self.fontMetrics().horizontalAdvance("0:00:00")
+            if self.current_os == "windows":
+                tte_string = time.strftime("%H:%M:%S", tte_gmtime)
+                if self.just_built_play_view:
+                    pixels_wide = self.fontMetrics().horizontalAdvance("00:00:00")
+            else:
+                tte_string = time.strftime("%-H:%M:%S", tte_gmtime)
+                if self.just_built_play_view:
+                    pixels_wide = self.fontMetrics().horizontalAdvance("0:00:00")
         else:
             tte_string = time.strftime("%M:%S", tte_gmtime)
             if self.just_built_play_view:
@@ -970,7 +981,10 @@ class MainWindow(qtw.QMainWindow):
                 time_remaining = (self.total_track_length - self.track_time_elapsed) / self.playback_speed_val
                 tr_gmtime = time.gmtime(int(time_remaining))
                 if self.total_track_length >= 3600:
-                    tte_string = time.strftime("-%-H:%M:%S", tr_gmtime)
+                    if self.current_os == "windows":
+                        tte_string = time.strftime("-%H:%M:%S", tr_gmtime)
+                    else:
+                        tte_string = time.strftime("-%-H:%M:%S", tr_gmtime)
                 else:
                     tte_string = time.strftime("-%M:%S", tr_gmtime)
                 self.position_total_time.setText(tte_string)
@@ -1052,7 +1066,7 @@ class MainWindow(qtw.QMainWindow):
         action = contextMenu.exec_(qtg.QCursor.pos())
         if action == about_action:
             self.build_about_view(self.results_lod[self.results_list.currentRow()])
-    
+
     @staticmethod
     def get_episode_url(episode):
         links = episode["links"]
