@@ -10,12 +10,14 @@ import vlc
 import urllib.request
 import os
 import ssl
+import lxml
 import peewee
 import base64
 import itunes
 import requests
 import certifi
 import validators
+from linux_integration import mprisIntegration, mprisPlayer, mprisMain, MPRIS2Helper
 from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
 from datetime import date, datetime, timedelta
@@ -408,7 +410,7 @@ class MainWindow(qtw.QMainWindow):
         if validators.url(ap_url):
             feed_req = requests.get(ap_url)
             try:
-                feed = BeautifulSoup(feed_req.content, features='xml')
+                feed = BeautifulSoup(feed_req.content, 'lxml-xml')
                 feed_title = feed.find('title').text
                 if url_add:
                     try:
@@ -551,7 +553,7 @@ class MainWindow(qtw.QMainWindow):
         query = EpisodeDB.select().where(EpisodeDB.podcast == self.current_podcast)
 
         feed_req = requests.get(self.current_podcast.url)
-        feed = BeautifulSoup(feed_req.content, features='xml')
+        feed = BeautifulSoup(feed_req.content, 'lxml-xml')
         items = feed.find_all('item')
 
         for episode in items:
@@ -828,7 +830,7 @@ class MainWindow(qtw.QMainWindow):
             
 
         feed_req = requests.get(ap_url)
-        feed = BeautifulSoup(feed_req.content, features='xml')
+        feed = BeautifulSoup(feed_req.content, 'lxml-xml')
         feed_title = feed.find('title').text
         try:
             feed_image = feed.find('image').find('url').text
