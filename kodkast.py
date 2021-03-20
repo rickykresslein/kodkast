@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 0.95
+# Version: 1.0
 
 import sys
 import time
@@ -10,7 +10,6 @@ import vlc
 import urllib.request
 import os
 import ssl
-import lxml
 import peewee
 import base64
 import itunes
