@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 0.8.9
+# Version: 0.95
 
 import sys
 import time
@@ -17,7 +17,7 @@ import itunes
 import requests
 import certifi
 import validators
-from linux_integration import mprisIntegration, mprisPlayer, mprisMain, MPRIS2Helper
+import linux_integration
 from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
 from datetime import date, datetime, timedelta
@@ -156,6 +156,7 @@ class MainWindow(qtw.QMainWindow):
         self.old_image = ""
         self.already_saved = -1
         self.current_os = "linux"
+        self.mpris_integration = None
         
         self.set_vlc_dir()
 
@@ -683,7 +684,10 @@ class MainWindow(qtw.QMainWindow):
         self.episode_title.move(0, 100)
         self.episode_title.setAlignment(qtc.Qt.AlignCenter)
 
-        self.position_elapsed_time = qtw.QLabel("00:00")
+        self.position_elapsed_time = qtw.QLineEdit("00:00")
+        self.position_elapsed_time.setReadOnly(True)
+        self.position_elapsed_time.setFrame(False)
+        self.position_elapsed_time.setStyleSheet('background-color:transparent')
         self.position_slider = QJumpSlider(qtc.Qt.Horizontal)
         self.position_slider.setMaximum(1000)
         self.position_total_time = QClickLabel()
@@ -741,6 +745,8 @@ class MainWindow(qtw.QMainWindow):
                 if self.current_episode.bookmark != 0:
                     self.show_track_time_elapsed()
         qtw.QApplication.restoreOverrideCursor()
+        if sys.platform == "linux" or sys.platform == "linux2":
+                self.init_linux_mpris_integration()
 
     def play_episode(self):
         if not self.player.is_playing():
@@ -768,7 +774,7 @@ class MainWindow(qtw.QMainWindow):
     def play_episode_shortcut(self):
         if self.player and self.ep_play:
             try:
-                self.play_episode()
+                self.ep_play.clicked.emit()
             except RuntimeError:
                 pass
 
@@ -964,7 +970,7 @@ class MainWindow(qtw.QMainWindow):
             if self.just_built_play_view:
                 pixels_wide = self.fontMetrics().horizontalAdvance("00:00")
         if self.just_built_play_view:
-            self.position_elapsed_time.setFixedWidth(pixels_wide)
+            self.position_elapsed_time.setFixedWidth(pixels_wide+4)
             self.just_built_play_view = False
         self.position_elapsed_time.setText(tte_string)
 
@@ -1044,6 +1050,8 @@ class MainWindow(qtw.QMainWindow):
                         time.sleep(0.5)
                     if self.current_episode.bookmark != 0:
                         self.player.set_time(self.current_episode.bookmark)
+                if sys.platform == "linux" or sys.platform == "linux2":
+                    self.init_linux_mpris_integration()
             else:
                 self.timer.stop()
 	
@@ -1068,6 +1076,22 @@ class MainWindow(qtw.QMainWindow):
         action = contextMenu.exec_(qtg.QCursor.pos())
         if action == about_action:
             self.build_about_view(self.results_lod[self.results_list.currentRow()])
+
+    def init_linux_mpris_integration(self):
+        self.current_episode_data = {
+            'artist': self.current_podcast.title,
+            'title': self.current_episode.title,
+            'duration': self.total_track_length,
+            'coverArt': self.current_episode.image,
+            'id': self.current_episode.id,
+            'track': self.current_episode.id,
+        }
+        if self.mpris_integration:
+            del self.mpris_integration
+        self.mpris_integration = linux_integration.mprisIntegration(self.player,
+                                    self.current_episode_data,
+                                    self.ep_play,
+                                    )
 
     @staticmethod
     def get_episode_url(episode):
