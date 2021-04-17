@@ -1097,6 +1097,7 @@ class MainWindow(qtw.QMainWindow):
 
     @staticmethod
     def get_episode_url(episode):
+        '''Find URL for audio file.'''
         links = episode["links"]
         for link in links:
             if "audio" in link["type"]:
