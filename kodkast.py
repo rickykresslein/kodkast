@@ -2,7 +2,7 @@
 # Author: Ricky Kresslein
 # Author URL: https://kressle.in
 # Project URL: https://kressle.in/projects/kodkast/
-# Version: 1.0
+# Version: 1.1
 
 import sys
 import time
@@ -20,6 +20,7 @@ import linux_integration
 from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
 from datetime import date, datetime, timedelta
+from dateutil import parser
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtGui as qtg
 from PyQt5 import QtCore as qtc
@@ -408,20 +409,20 @@ class MainWindow(qtw.QMainWindow):
             ap_url = ap_selection
 
         if validators.url(ap_url):
-            feed_req = requests.get(ap_url)
+            feed_req = requests.get(ap_url, verify=certifi.where(), headers=self.headers)
             try:
                 feed = BeautifulSoup(feed_req.content, 'lxml-xml')
                 feed_title = feed.find('title').text
                 if url_add:
                     try:
-                        feed_image = feed.find('image')['href']
+                        feed_image = feed.find('itunes:image')['href']
                     except KeyError:
-                        feed_image = feed.find('image').find('url').text
+                        feed_image = feed.find('itunes:image').find('url').text
                 else:
                     try:
-                        feed_image = feed.find('image').find('url').text
+                        feed_image = feed.find('itunes:image').find('url').text
                     except:
-                        feed_image = feed.find('image')['href']
+                        feed_image = feed.find('itunes:image')['href']
                 query = PodcastDB.select().where(PodcastDB.title == feed_title)
                 if query.exists():
                     qtw.QApplication.restoreOverrideCursor()
@@ -456,7 +457,7 @@ class MainWindow(qtw.QMainWindow):
         self.currently_top_100 = True
         self.results_list.clear()
         self.results_lod = []
-        results = requests.get('https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json', verify=certifi.where()).json()
+        results = requests.get('https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json', verify=certifi.where(), headers=self.headers).json()
         results = results['feed']['results']
         for result in results:
             # Only show results that have the necessary keys
@@ -512,6 +513,7 @@ class MainWindow(qtw.QMainWindow):
         self.ep_list = qtw.QTableWidget()
         self.ep_list.setColumnCount(2)
         self.ep_list.setHorizontalHeaderLabels(['Date', 'Title'])
+        self.ep_list.horizontalHeader().setHighlightSections(False)
         self.ep_list.horizontalHeaderItem(0).setTextAlignment(qtc.Qt.AlignLeft)
         self.ep_list.horizontalHeaderItem(1).setTextAlignment(qtc.Qt.AlignLeft)
         self.ep_list.setSelectionBehavior(qtw.QAbstractItemView.SelectRows)
@@ -560,12 +562,13 @@ class MainWindow(qtw.QMainWindow):
             is_new_episode = True
             episode_title = episode.title.text
             episode_url = episode.enclosure['url']
-            published_date = datetime.strptime(episode.pubDate.text, "%a, %d %b %Y %H:%M:%S %z")
+            # published_date = datetime.strptime(episode.pubDate.text, "%a, %d %b %Y %H:%M:%S %z")
+            published_date = parser.parse(episode.pubDate.text)
             try:
-                episode_image = feed.find('image').find('url').text
+                episode_image = feed.find('itunes:image').find('url').text
             except:
                 try:
-                    episode_image = feed.find('image')['href']
+                    episode_image = feed.find('itunes:image')['href']
                 except:
                     episode_image = None
             
@@ -695,7 +698,7 @@ class MainWindow(qtw.QMainWindow):
         self.ep_play.setFixedHeight(45)
         ep_skip_back = qtw.QPushButton("⟲", clicked=self.skip_back)
         ep_skip_fwd = qtw.QPushButton("⟳", clicked=self.skip_forward)
-        self.playback_speed_btn = qtw.QPushButton(f"{self.playback_speed_val}x", clicked=self.set_playback_speed)
+        self.playback_speed_btn = qtw.QPushButton("{}x".format(self.playback_speed_val), clicked=self.set_playback_speed)
         self.playback_speed_btn.setFixedWidth(50)
 
         controls_layout = qtw.QWidget()
@@ -834,7 +837,7 @@ class MainWindow(qtw.QMainWindow):
             ap_url = ap_selection['url']
             
 
-        feed_req = requests.get(ap_url)
+        feed_req = requests.get(ap_url, verify=certifi.where(), headers=self.headers)
         feed = BeautifulSoup(feed_req.content, 'lxml-xml')
         feed_title = feed.find('title').text
         try:
@@ -946,7 +949,7 @@ class MainWindow(qtw.QMainWindow):
             if self.playback_speed_val > 2:
                 self.playback_speed_val = 1
             self.player.set_rate(self.playback_speed_val)
-            self.playback_speed_btn.setText(f"{self.playback_speed_val}x")
+            self.playback_speed_btn.setText("{}x".format(self.playback_speed_val))
 
     def to_play_view(self):
         self.build_play_view(self.current_episode.title)
