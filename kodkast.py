@@ -697,7 +697,11 @@ class MainWindow(qtw.QMainWindow):
         self.ep_play = qtw.QPushButton("►", clicked=self.play_episode)
         self.ep_play.setFixedHeight(45)
         ep_skip_back = qtw.QPushButton("⟲", clicked=self.skip_back)
+        self.skip_back_key = qtw.QShortcut(qtg.QKeySequence(qtc.Qt.Key_Left), self)
+        self.skip_back_key.activated.connect(self.skip_back)
         ep_skip_fwd = qtw.QPushButton("⟳", clicked=self.skip_forward)
+        self.skip_fwd_key = qtw.QShortcut(qtg.QKeySequence(qtc.Qt.Key_Right), self)
+        self.skip_fwd_key.activated.connect(self.skip_forward)
         self.playback_speed_btn = qtw.QPushButton("{}x".format(self.playback_speed_val), clicked=self.set_playback_speed)
         self.playback_speed_btn.setFixedWidth(50)
 
