@@ -1,6 +1,10 @@
 # Kodkast
 Kodkast is a minimal yet powerful podcast player.
 
+![Kodkast Library](https://kressle.in/projects/kodkast/assets/Kodkast_library.png)
+![Kodkast Episodes](https://kressle.in/projects/kodkast/assets/Kodkast_episodes.png)
+![Kodkast Player](https://kressle.in/projects/kodkast/assets/Kodkast_player.png)
+
 ## More info...
 Kodkast is simple and lightweight, but contains all the tools you may require or desire when listening to podcasts. You can listen at 1x-2x playback speed, skip backwards or forwards, and play/pause. Who needs to do more?
 
