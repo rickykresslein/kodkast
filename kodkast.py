@@ -1160,6 +1160,7 @@ class MainWindow(qtw.QMainWindow):
         local_file = os.path.join(pod_dir, filename)
         if os.path.isfile(local_file):
             os.remove(local_file)
+            # If there was only one downloaded episode, delete the podcast folder
             if not os.listdir(pod_dir):
                 os.rmdir(pod_dir)
             deleted_item = self.ep_list.findItems(episode, qtc.Qt.MatchExactly)
