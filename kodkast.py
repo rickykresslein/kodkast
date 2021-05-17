@@ -16,6 +16,7 @@ import itunes
 import requests
 import certifi
 import validators
+import shutil
 import linux_integration
 from bs4 import BeautifulSoup
 from models import PodcastDB, EpisodeDB
@@ -221,19 +222,24 @@ class MainWindow(qtw.QMainWindow):
     def build_menu_bar(self):
         menubar = self.menuBar()
 
+        # File menu
         file_menu = menubar.addMenu("File")
         file_menu.addAction('Quit', qtw.QApplication.quit, qtg.QKeySequence.Quit)
 
+        # Podcasts menu
         podcasts_menu = menubar.addMenu("Podcasts")
         self.add_podcast_action = podcasts_menu.addAction('Add a new podcast', self.build_add_podcast)
         self.add_podcast_action.setShortcut('Ctrl+A')
-        self.remove_podcast_action = podcasts_menu.addAction('Remove podcast', lambda: self.remove_podcast(self.lib_podcasts.currentItem().text()))
+        self.remove_podcast_action = podcasts_menu.addAction('Remove podcast',
+                                                             lambda: self.remove_podcast(self.lib_podcasts.currentItem().text()))
 
+        # Episodes menu
         episodes_menu = menubar.addMenu("Episodes")
         self.refresh_episodes_action = episodes_menu.addAction('Refresh episode list', self.load_episodes_from_feed)
         self.refresh_episodes_action.setShortcut('Ctrl+R')
         self.refresh_episodes_action.setEnabled(False)
 
+        # Play/pause with spacebar
         self.play_shortcut = qtw.QShortcut(qtg.QKeySequence("Space"), self)
         self.play_shortcut.activated.connect(self.play_episode_shortcut)
         self.play_pause_key = qtw.QShortcut(qtg.QKeySequence(qtc.Qt.Key_MediaPlay), self)
@@ -482,12 +488,15 @@ class MainWindow(qtw.QMainWindow):
 
     def remove_podcast(self, current_podcast):
         qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
-        current_podcast = PodcastDB.select().where(PodcastDB.title==current_podcast).get()
-        current_podcast.delete_instance()
-        query = EpisodeDB.select().where(EpisodeDB.podcast == current_podcast)
+        current_podcast_db = PodcastDB.select().where(PodcastDB.title==current_podcast).get()
+        current_podcast_db.delete_instance()
+        query = EpisodeDB.select().where(EpisodeDB.podcast == current_podcast_db)
         if query.exists():
             for episode in query:
                 episode.delete_instance()
+        pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', current_podcast)
+        if os.path.isdir(pod_dir):
+            self.delete_downloaded_podcast(current_podcast, pod_dir)
         self.refresh_podcast_list()
         qtw.QApplication.restoreOverrideCursor()
 
@@ -547,7 +556,7 @@ class MainWindow(qtw.QMainWindow):
         else:
             # Otherwise, build a new list from the feed.
             self.load_episodes_from_feed()
-        self.refresh_episodes_action.setEnabled(True)        
+        self.refresh_episodes_action.setEnabled(True)
 
     def load_episodes_from_feed(self):
         qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
@@ -618,10 +627,13 @@ class MainWindow(qtw.QMainWindow):
         self.ep_list.setRowCount(0)
         today = date.today()
         yesterday = today - timedelta(days=1)
+        pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', self.current_podcast.title)
         for episode in query:
             row_data = [episode.pub_date.strftime("%m-%d-%Y"), episode.title]
             row = self.ep_list.rowCount()
             self.ep_list.setRowCount(row+1)
+            filename = episode.url.split('/')[-1]
+            local_file = os.path.join(pod_dir, filename)
             col = 0
             for item in row_data:
                 if item == today.strftime("%m-%d-%Y"):
@@ -630,6 +642,8 @@ class MainWindow(qtw.QMainWindow):
                     item = "Yesterday"
                 cell = qtw.QTableWidgetItem(item)
                 self.ep_list.setItem(row, col, cell)
+                if os.path.isfile(local_file):
+                    self.ep_list.item(row, col).setForeground(qtg.QColor("green"))
                 col += 1
         self.ep_list.resizeColumnsToContents()
         qtw.QApplication.restoreOverrideCursor()
@@ -733,7 +747,15 @@ class MainWindow(qtw.QMainWindow):
             self.track = self.current_episode.url
             if self.player and self.player.is_playing():
                 self.player.stop()
-            self.player = vlc.MediaPlayer(self.track)
+            # Check if the episode exists locally
+            pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', self.current_podcast.title)
+            filename = self.track.split('/')[-1]
+            local_file = os.path.join(pod_dir, filename)
+            if os.path.isfile(local_file):
+                self.player = vlc.MediaPlayer(local_file)
+            # Otherwise stream it
+            else:
+                self.player = vlc.MediaPlayer(self.track)
             self.podcast_title.setText(self.current_podcast.title)
             self.episode_title.setText(self.current_episode.title)
             self.is_paused = False
@@ -1063,18 +1085,42 @@ class MainWindow(qtw.QMainWindow):
 	
     def library_context_menu(self, position):
         if self.lib_podcasts.itemAt(position):
+            delete_downloads_action = None
             contextMenu = qtw.QMenu(self)
             remove_action = contextMenu.addAction("Remove Podcast")
+            pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', self.lib_podcasts.itemAt(position).text())
+            if os.path.isdir(pod_dir):
+                delete_downloads_action = contextMenu.addAction("Delete downloaded episodes")
             action = contextMenu.exec_(qtg.QCursor.pos())
             if action == remove_action:
                 self.remove_podcast(self.lib_podcasts.itemAt(position).text())
+            elif action == delete_downloads_action:
+                self.delete_downloaded_podcast(self.lib_podcasts.itemAt(position).text(), pod_dir)
                 
     def episode_context_menu(self, position):
+        download_action = None
+        delete_download_action = None
         contextMenu = qtw.QMenu(self)
         play_action = contextMenu.addAction("Play")
+        # Remove download possible if already downloaded
+        ep_db = EpisodeDB.get(EpisodeDB.title == self.ep_list.item(self.ep_list.currentRow(),1).text())
+        pod_db = PodcastDB.get_by_id(ep_db.podcast)
+        pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', pod_db.title)
+        filename = ep_db.url.split('/')[-1]
+        local_file = os.path.join(pod_dir, filename)
+        if os.path.isfile(local_file):
+            delete_download_action = contextMenu.addAction("Delete download")
+        # Otherwise show download option
+        else:
+            download_action = contextMenu.addAction("Download")
         action = contextMenu.exec_(qtg.QCursor.pos())
         if action == play_action:
+            # Play episode
             self.build_play_view(self.ep_list.item(self.ep_list.currentRow(),1).text())
+        elif action == download_action:
+            self.download_episode(self.ep_list.item(self.ep_list.currentRow(), 1).text())
+        elif action == delete_download_action:
+            self.delete_downloaded_episode(self.ep_list.item(self.ep_list.currentRow(), 1).text())
             
     def search_context_menu(self, position):
         contextMenu = qtw.QMenu(self)
@@ -1082,6 +1128,50 @@ class MainWindow(qtw.QMainWindow):
         action = contextMenu.exec_(qtg.QCursor.pos())
         if action == about_action:
             self.build_about_view(self.results_lod[self.results_list.currentRow()])
+
+    def download_episode(self, episode):
+        qtw.QApplication.setOverrideCursor(qtc.Qt.WaitCursor)
+        # Get the name of the podcast
+        ep_db = EpisodeDB.get(EpisodeDB.title == episode)
+        pod_db = PodcastDB.get_by_id(ep_db.podcast)
+        pod_name = pod_db.title
+        # Create a directory for the podcast if it doesn't exist
+        pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', pod_name)
+        if not os.path.isdir(pod_dir):
+            os.makedirs(pod_dir)
+        # Download mp3 file into podcast folder
+        mp3_req = requests.get(ep_db.url, verify=certifi.where(), headers=self.headers)
+        filename = ep_db.url.split('/')[-1]
+        local_file = os.path.join(pod_dir, filename)
+        with open(local_file, 'wb') as outfile:
+            outfile.write(mp3_req.content)
+        new_dl_item = self.ep_list.findItems(episode, qtc.Qt.MatchExactly)
+        new_dl_row = self.ep_list.row(new_dl_item[0])
+        self.ep_list.item(new_dl_row, 0).setForeground(qtg.QColor("green"))
+        self.ep_list.item(new_dl_row, 1).setForeground(qtg.QColor("green"))
+        qtw.QApplication.restoreOverrideCursor()
+
+    def delete_downloaded_episode(self, episode):
+        ep_db = EpisodeDB.get(EpisodeDB.title == episode)
+        pod_db = PodcastDB.get_by_id(ep_db.podcast)
+        pod_name = pod_db.title
+        pod_dir = os.path.join(os.path.expanduser('~'), '.kodkast', pod_name)
+        filename = ep_db.url.split('/')[-1]
+        local_file = os.path.join(pod_dir, filename)
+        if os.path.isfile(local_file):
+            os.remove(local_file)
+            if not os.listdir(pod_dir):
+                os.rmdir(pod_dir)
+            deleted_item = self.ep_list.findItems(episode, qtc.Qt.MatchExactly)
+            deleted_row = self.ep_list.row(deleted_item[0])
+            self.ep_list.item(deleted_row, 0).setForeground(qtg.QColor("black"))
+            self.ep_list.item(deleted_row, 1).setForeground(qtg.QColor("black"))
+
+    def delete_downloaded_podcast(self, podcast, pod_dir):
+        try:
+            shutil.rmtree(pod_dir)
+        except OSError as e:
+            print("Error: %s : %s" % (pod_dir, e.strerror))
 
     def init_linux_mpris_integration(self):
         self.current_episode_data = {
