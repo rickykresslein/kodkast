@@ -2,9 +2,9 @@
 Kodkast is a minimal yet powerful podcast player.
 
 <p float="left">
-    <img src="https://kressle.in/projects/kodkast/assets/Kodkast_library.png" alt="Kodkast library screenshot" width="250"/>
-    <img src="https://kressle.in/projects/kodkast/assets/Kodkast_episodes.png" alt="Kodkast episode list screenshot" width="250"/>
-    <img src="https://kressle.in/projects/kodkast/assets/Kodkast_player.png" alt="Kodkast player screenshot" width="250"/>
+    <img src="https://raw.githubusercontent.com/rickykresslein/kodkast/main/screenshots/Kodkast_library.png" alt="Kodkast library screenshot" width="250"/>
+    <img src="https://raw.githubusercontent.com/rickykresslein/kodkast/main/screenshots/Kodkast_episodes.png" alt="Kodkast episode list screenshot" width="250"/>
+    <img src="https://raw.githubusercontent.com/rickykresslein/kodkast/main/screenshots/Kodkast_player.png" alt="Kodkast player screenshot" width="250"/>
 </p>
 
 ## More info...
